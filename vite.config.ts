@@ -1,8 +1,10 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const pagesBase = process.env.PAGES_BASE || './';
+
 export default defineConfig({
-  base: './',
+  base: pagesBase,
   plugins: [
     VitePWA({
       registerType: 'prompt',

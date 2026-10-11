@@ -56,12 +56,13 @@ npm run preview     # serve dist locally (good for PWA checks)
 6. **Settings** → export destination workbook and JSON backup.  
 7. DevTools → Network → Offline → reload: search, log, dashboard, backup still work.
 
-## Deploy (HTTPS static / GitHub Pages)
+## Deploy (GitHub Pages)
 
-1. `npm run build`  
-2. Publish the `dist/` folder to any static HTTPS host (GitHub Pages, Cloudflare Pages, Netlify, etc.).  
-3. Set the Pages source to `/dist` or deploy the contents of `dist`.  
-4. `base: './'` is already configured for project-page subpaths.
+Pushes to `main` build the app and publish it with GitHub Actions.
+
+Live site: https://aatish-raj-singh.github.io/daily-meal-tracker/
+
+In the repository, open **Settings → Pages** and set **Source** to **GitHub Actions** if it is not already. Local development stays at `/`. The Pages build uses `/daily-meal-tracker/` so assets resolve on the project site.
 
 Redeploying the app shell does **not** wipe IndexedDB. Database name/version stay stable; schema changes must use the `upgrade` path in `src/db/database.ts`.
 
