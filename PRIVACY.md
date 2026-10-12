@@ -8,7 +8,7 @@ Everything stays on your device (browser storage / IndexedDB and files you choos
 - Nutrition source workbook working copy (imported bytes) and column mapping
 - Destination / food-log workbook working copy, recovery copy, and column mapping
 - Daily targets and app settings
-- Account emails, display names, approval status, and password hashes (PBKDF2). Passwords are never stored in plain text and are not sent to a server.
+- Account emails and display names from Google sign-in. Passwords are not stored. A Google ID token is kept in this browser until it expires so the app can confirm the session. Google receives the sign-in itself.
 - Pending destination sync operations and recovery metadata
 - Optional JSON backups you export yourself
 

@@ -1,13 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ADMIN_EMAIL } from '../types';
-import { clearAllData, resetDbPromise } from '../db/database';
-import {
-  getSessionAccount,
-  login,
-  logout,
-  registerAccount,
-  setAccountStatus,
-} from './accounts';
+import { clearAllData, resetDbPromise, saveAuthSession } from '../db/database';
+import { getSessionAccount, roleForEmail } from './accounts';
+import { assertGoogleClaims } from './googleToken';
+import { nowIso } from '../util/hash';
 
 async function reset(): Promise<void> {
   try {
@@ -18,77 +14,59 @@ async function reset(): Promise<void> {
   resetDbPromise();
 }
 
-describe('accounts and admin access', () => {
+describe('google admin access', () => {
   beforeEach(async () => {
     await reset();
   });
 
-  it('creates the designated email as the approved admin', async () => {
-    const admin = await registerAccount({
-      email: 'BiasThakur.Aatish@gmail.com',
-      password: 'admin-pass-1',
-      displayName: 'Aatish',
-    });
-    expect(admin.email).toBe(ADMIN_EMAIL);
-    expect(admin.role).toBe('admin');
-    expect(admin.status).toBe('approved');
-    expect((await getSessionAccount())?.email).toBe(ADMIN_EMAIL);
+  it('grants admin only to the designated email', () => {
+    expect(roleForEmail('BiasThakur.Aatish@gmail.com')).toBe('admin');
+    expect(roleForEmail(ADMIN_EMAIL)).toBe('admin');
+    expect(roleForEmail('friend@example.com')).toBe('member');
   });
 
-  it('keeps other people pending until the admin approves them', async () => {
-    await registerAccount({
-      email: ADMIN_EMAIL,
-      password: 'admin-pass-1',
-      displayName: 'Aatish',
-    });
-    const member = await registerAccount({
-      email: 'friend@example.com',
-      password: 'friend-pass-1',
-      displayName: 'Friend',
-    });
-    expect(member.status).toBe('pending');
-    expect(member.role).toBe('member');
-
-    await logout();
-    const pendingLogin = await login('friend@example.com', 'friend-pass-1');
-    expect(pendingLogin.status).toBe('pending');
-
-    await logout();
-    await login(ADMIN_EMAIL, 'admin-pass-1');
-    const approved = await setAccountStatus('friend@example.com', 'approved');
-    expect(approved.status).toBe('approved');
-
-    await logout();
-    const signedIn = await login('friend@example.com', 'friend-pass-1');
-    expect(signedIn.status).toBe('approved');
+  it('accepts a verified Google token for the configured client', () => {
+    const identity = assertGoogleClaims(
+      {
+        iss: 'https://accounts.google.com',
+        aud: 'client-id',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        email: 'BiasThakur.Aatish@gmail.com',
+        email_verified: true,
+        name: 'Aatish',
+        sub: 'google-subject',
+      },
+      'client-id',
+    );
+    expect(identity.email).toBe(ADMIN_EMAIL);
+    expect(roleForEmail(identity.email)).toBe('admin');
   });
 
-  it('rejects a bad password and blocks members from approving access', async () => {
-    await registerAccount({
-      email: ADMIN_EMAIL,
-      password: 'admin-pass-1',
-      displayName: 'Aatish',
-    });
-    await registerAccount({
+  it('rejects unverified emails and the wrong app', () => {
+    const base = {
+      iss: 'https://accounts.google.com',
+      aud: 'client-id',
+      exp: Math.floor(Date.now() / 1000) + 3600,
       email: 'friend@example.com',
-      password: 'friend-pass-1',
-      displayName: 'Friend',
-    });
-    await logout();
-    await expect(login(ADMIN_EMAIL, 'wrong-password')).rejects.toThrow(/Incorrect password/);
-
-    await login('friend@example.com', 'friend-pass-1');
-    await expect(setAccountStatus('friend@example.com', 'approved')).rejects.toThrow(
-      /Only the admin/,
+      email_verified: true,
+    };
+    expect(() => assertGoogleClaims({ ...base, email_verified: false }, 'client-id')).toThrow(
+      /not verified/,
+    );
+    expect(() => assertGoogleClaims({ ...base, aud: 'other-app' }, 'client-id')).toThrow(
+      /different app/,
+    );
+    expect(() => assertGoogleClaims({ ...base, iss: 'https://evil.example' }, 'client-id')).toThrow(
+      /not issued by Google/,
     );
   });
 
-  it('does not allow the admin account to be revoked', async () => {
-    await registerAccount({
+  it('ignores old password sessions that have no Google token', async () => {
+    await saveAuthSession({
+      id: 'current',
       email: ADMIN_EMAIL,
-      password: 'admin-pass-1',
-      displayName: 'Aatish',
+      createdAt: nowIso(),
     });
-    await expect(setAccountStatus(ADMIN_EMAIL, 'denied')).rejects.toThrow(/cannot be denied/);
+    expect(await getSessionAccount()).toBeNull();
   });
 });

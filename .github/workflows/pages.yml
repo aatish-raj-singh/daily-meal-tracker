@@ -34,6 +34,7 @@ jobs:
         run: npm run build
         env:
           PAGES_BASE: /daily-meal-tracker/
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v3

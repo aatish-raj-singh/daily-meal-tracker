@@ -12,6 +12,7 @@ import {
   type StoredBlob,
   type Account,
   type AuthSession,
+  type GoogleCertCache,
 } from '../types';
 import { nowIso } from '../util/hash';
 
@@ -54,6 +55,10 @@ interface MealTrackerDB extends DBSchema {
     key: 'current';
     value: AuthSession;
   };
+  googleCerts: {
+    key: 'jwks';
+    value: GoogleCertCache;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<MealTrackerDB>> | null = null;
@@ -91,6 +96,9 @@ export function getDb(): Promise<IDBPDatabase<MealTrackerDB>> {
         }
         if (!db.objectStoreNames.contains('session')) {
           db.createObjectStore('session');
+        }
+        if (!db.objectStoreNames.contains('googleCerts')) {
+          db.createObjectStore('googleCerts');
         }
       },
     });
@@ -276,6 +284,16 @@ export async function clearAuthSession(): Promise<void> {
   await db.delete('session', 'current');
 }
 
+export async function getGoogleCertCache(): Promise<GoogleCertCache | undefined> {
+  const db = await getDb();
+  return db.get('googleCerts', 'jwks');
+}
+
+export async function saveGoogleCertCache(cache: GoogleCertCache): Promise<void> {
+  const db = await getDb();
+  await db.put('googleCerts', cache, 'jwks');
+}
+
 export async function clearAllData(): Promise<void> {
   const db = await getDb();
   const tx = db.transaction(
@@ -289,6 +307,7 @@ export async function clearAllData(): Promise<void> {
       'recovery',
       'accounts',
       'session',
+      'googleCerts',
     ],
     'readwrite',
   );
@@ -302,6 +321,7 @@ export async function clearAllData(): Promise<void> {
     tx.objectStore('recovery').clear(),
     tx.objectStore('accounts').clear(),
     tx.objectStore('session').clear(),
+    tx.objectStore('googleCerts').clear(),
   ]);
   await tx.done;
 }

@@ -1,6 +1,6 @@
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.2.0';
 export const DB_NAME = 'daily-meal-tracker';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 export const ADMIN_EMAIL = 'biasthakur.aatish@gmail.com';
 
 export type MealCategory = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'other';
@@ -218,9 +218,6 @@ export interface Account {
   displayName: string;
   role: UserRole;
   status: AccountStatus;
-  passwordSalt: string;
-  passwordHash: string;
-  passwordIterations: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -229,6 +226,16 @@ export interface AuthSession {
   id: 'current';
   email: string;
   createdAt: string;
+  /** Google ID token. Sessions without one are ignored. */
+  idToken?: string;
+  /** Unix seconds, matching the token `exp` claim. */
+  expiresAt?: number;
+}
+
+export interface GoogleCertCache {
+  id: 'jwks';
+  fetchedAt: string;
+  keys: JsonWebKey[];
 }
 
 export interface JsonBackupPayload {

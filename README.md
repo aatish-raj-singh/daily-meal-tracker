@@ -2,17 +2,21 @@
 
 Local-first, offline-capable meal tracker for laptop and iPhone. Nutrition data comes from a user-selected Excel workbook. Food entries are written to a **separately selected** destination Excel workbook. IndexedDB holds the offline working log, configuration, workbook working copies, and pending sync operations.
 
-**App version:** `1.1.0`
+**App version:** `1.2.0`
 
 ## Login and admin access
 
-The tracker stays closed until someone signs in.
+Sign-in uses Google. The app does not store a password.
 
-- The admin account is reserved for `biasthakur.aatish@gmail.com`. The first launch asks that account to set a password.
-- Anyone else can request access. They stay on a waiting screen until the admin approves them on the **Admin** tab.
-- Approvals and passwords live in this browser’s IndexedDB. They are included in the JSON backup so you can restore them on your iPhone. Meal data is still not uploaded.
+Admin access is granted only when Google verifies the email `biasthakur.aatish@gmail.com`. Every other Google account is a regular user. There is no button that creates an admin password.
 
-A JSON backup includes password hashes. Keep that file private.
+Create a Google Cloud OAuth **Web** client and set `VITE_GOOGLE_CLIENT_ID` for local builds and the GitHub Actions build. Authorized JavaScript origins:
+
+- `https://aatish-raj-singh.github.io`
+- `http://127.0.0.1:5173`
+- `http://localhost:5173`
+
+The client ID is public. It still has to match this app, and the ID token signature is checked against Google's keys.
 
 ## Architecture (short)
 
