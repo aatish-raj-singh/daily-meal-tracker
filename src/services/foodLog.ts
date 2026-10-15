@@ -19,6 +19,7 @@ import {
   getAllEntries,
 } from '../db/database';
 import {
+  appendNutritionRow,
   applyEntryToDestinationWorkbook,
   exportFileName,
   importWorkbookFile,
@@ -28,6 +29,7 @@ import {
   buildDefaultDestinationConfig,
   buildDefaultSourceConfig,
   previewSheet,
+  type NutritionSheetRow,
 } from '../excel/workbook';
 import { calculateNutrients } from '../nutrition/calc';
 import type {
@@ -38,6 +40,7 @@ import type {
   SourceFood,
   SourceWorkbookConfig,
 } from '../types';
+import { refreshBoundFile, updateBoundFile, writeBoundFile } from '../excel/fileAccess';
 import { downloadBlob, newId, nowIso, currentTimeLocal, sha256Hex } from '../util/hash';
 import { calculateDailyTotals } from './totals';
 
@@ -65,6 +68,7 @@ export interface SaveEntryResult {
 let sourceFoodCache: { sha: string; foods: SourceFood[] } | null = null;
 
 export async function getCachedSourceFoods(): Promise<SourceFood[]> {
+  if (await refreshBoundFile('source').catch(() => false)) invalidateSourceCache();
   const config = await getSourceConfig();
   const blob = await getBlob('source');
   if (!config || !blob) return [];
@@ -106,6 +110,27 @@ export async function importSourceWorkbook(
   };
 }
 
+export async function addNutritionFood(
+  row: Omit<NutritionSheetRow, 'foodId'>,
+): Promise<void> {
+  const config = await getSourceConfig();
+  const blob = await getBlob('source');
+  if (!config || !blob) throw new Error('Add your food list first.');
+  const fullRow = { ...row, foodId: newId() };
+  const written = await updateBoundFile('source', (data) => appendNutritionRow(data, config, fullRow));
+  const bytes = written ?? appendNutritionRow(blob.data, config, fullRow);
+  const sha = await sha256Hex(bytes);
+  await putBlob({
+    id: 'source',
+    fileName: blob.fileName,
+    mimeType: blob.mimeType,
+    data: bytes,
+    sha256: sha,
+    savedAt: nowIso(),
+  });
+  invalidateSourceCache();
+}
+
 export async function updateSourceMapping(config: SourceWorkbookConfig): Promise<void> {
   await saveSourceConfig(config);
   invalidateSourceCache();
@@ -120,7 +145,7 @@ export async function importDestinationWorkbook(
   const source = await getSourceConfig();
   if (source && source.identity.sha256 === imported.identity.sha256) {
     throw new Error(
-      'Destination workbook must be selected independently. This file matches the nutrition source workbook hash. Choose a different food-log workbook.',
+      'That file is already your food list. Choose a different Excel file for meals.',
     );
   }
 
@@ -160,13 +185,26 @@ export async function updateDestinationMapping(config: DestinationWorkbookConfig
   await saveDestinationConfig(config);
 }
 
+function missingWorkbookMessage(kind: 'source' | 'destination'): string {
+  switch (kind) {
+    case 'source':
+      return 'Add your food list first.';
+    case 'destination':
+      return 'Add a meal log file first.';
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
 export async function previewWorkbookSheet(
   kind: 'source' | 'destination',
   sheetName: string,
   headerRowIndex: number,
 ) {
   const blob = await getBlob(kind);
-  if (!blob) throw new Error(`No ${kind} workbook imported.`);
+  if (!blob) throw new Error(missingWorkbookMessage(kind));
   const imported = readWorkbookFromBuffer(blob.data, blob.fileName);
   return {
     sheetNames: imported.sheetNames,
@@ -179,7 +217,7 @@ export async function saveFoodEntry(input: SaveEntryInput): Promise<SaveEntryRes
   const settings = await getSettings();
   const sourceConfig = await getSourceConfig();
   if (!sourceConfig) {
-    throw new Error('Import and map a nutrition source workbook before logging food.');
+    throw new Error('Add your food list on the Excel tab first.');
   }
 
   const calc = calculateNutrients({
@@ -248,8 +286,8 @@ export async function saveFoodEntry(input: SaveEntryInput): Promise<SaveEntryRes
       workbookPending: false,
       verified: sync.verified,
       message: sync.verified
-        ? 'Local log saved and destination workbook updated and verified.'
-        : 'Local log saved and workbook written, but verification reported an unexpected row count.',
+        ? 'Meal saved.'
+        : 'Meal saved. Download the Excel file from Settings and check the latest row.',
       totals,
     };
   }
@@ -261,8 +299,8 @@ export async function saveFoodEntry(input: SaveEntryInput): Promise<SaveEntryRes
     workbookPending: true,
     verified: false,
     message:
-      'Local log is saved, but workbook export/sync is pending. ' +
-      (sync.error ?? 'Destination workbook is not ready.'),
+      'Meal saved on this device. ' +
+      (sync.error ?? 'The Excel meal log is not ready yet.'),
     totals,
   };
 }
@@ -297,8 +335,8 @@ export async function deleteFoodEntry(entryId: string): Promise<SaveEntryResult>
     workbookPending: !sync.synced,
     verified: sync.verified,
     message: sync.synced
-      ? 'Entry deleted locally and removed from destination workbook.'
-      : 'Entry deleted locally; workbook sync is pending.',
+      ? 'Meal removed.'
+      : 'Meal removed on this device. The Excel file still needs updating.',
     totals,
   };
 }
@@ -307,13 +345,14 @@ async function trySyncEntry(
   entry: FoodEntry,
   operation: 'upsert' | 'delete',
 ): Promise<{ synced: boolean; verified: boolean; error?: string }> {
+  await refreshBoundFile('destination');
   const destConfig = await getDestinationConfig();
   const destBlob = await getBlob('destination');
   if (!destConfig || !destBlob) {
     return {
       synced: false,
       verified: false,
-      error: 'No destination workbook configured.',
+      error: 'Add a meal log file on the Excel tab first.',
     };
   }
 
@@ -337,7 +376,7 @@ async function trySyncEntry(
 
     if (!result.verified) {
       throw new Error(
-        `Verification failed: expected one destination row for Entry_ID, found ${result.rowCountForEntry}.`,
+        'The meal couldn’t be checked in the Excel file. Try saving again.',
       );
     }
 
@@ -350,6 +389,7 @@ async function trySyncEntry(
       sha256: sha,
       savedAt: nowIso(),
     });
+    await writeBoundFile('destination', result.workbookBytes);
 
     const updatedEntry: FoodEntry = {
       ...entry,
@@ -435,11 +475,12 @@ export async function retryPendingWrites(): Promise<{
 export async function exportDestinationWorkbook(): Promise<{
   fileName: string;
   pendingRemaining: number;
+  wroteInPlace: boolean;
 }> {
   const blob = await getBlob('destination');
   const config = await getDestinationConfig();
   if (!blob || !config) {
-    throw new Error('No destination workbook working copy available.');
+    throw new Error('Add a meal log file on the Excel tab first.');
   }
 
   // Refresh recovery copy before user download
@@ -454,10 +495,11 @@ export async function exportDestinationWorkbook(): Promise<{
 
   const retry = await retryPendingWrites();
   const fresh = await getBlob('destination');
-  if (!fresh) throw new Error('Destination working copy missing after sync retry.');
+  if (!fresh) throw new Error('The meal log isn’t ready to download. Try again.');
 
   const fileName = exportFileName(config.identity.fileName, 'export');
-  downloadBlob(workbookToBlob(fresh.data), fileName);
+  const wroteInPlace = await writeBoundFile('destination', fresh.data);
+  if (!wroteInPlace) downloadBlob(workbookToBlob(fresh.data), fileName);
 
   config.lastVerifiedExportAt = nowIso();
   config.lastBackupAt = nowIso();
@@ -466,16 +508,18 @@ export async function exportDestinationWorkbook(): Promise<{
   const pendingRemaining = (await getPendingWrites()).length;
   if (retry.failed > 0) {
     throw new Error(
-      `Exported ${fileName}, but ${retry.failed} pending sync operation(s) still failed. Local records remain; retry again later.`,
+      wroteInPlace
+        ? `${retry.failed} meal${retry.failed === 1 ? '' : 's'} still need saving.`
+        : `Downloaded ${fileName}, but ${retry.failed} meal${retry.failed === 1 ? '' : 's'} still need saving.`,
     );
   }
 
-  return { fileName, pendingRemaining };
+  return { fileName, pendingRemaining, wroteInPlace };
 }
 
 export async function exportRecoveryCopy(): Promise<string> {
   const recovery = await getBlob('destination-recovery');
-  if (!recovery) throw new Error('No recovery copy available.');
+  if (!recovery) throw new Error('No earlier copy to download yet.');
   const fileName = exportFileName(recovery.fileName.replace(/^RECOVERY_/, ''), 'backup');
   downloadBlob(workbookToBlob(recovery.data), fileName);
   return fileName;

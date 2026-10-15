@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ADMIN_EMAIL } from '../types';
 import { clearAllData, resetDbPromise, saveAuthSession } from '../db/database';
-import { getSessionAccount, roleForEmail } from './accounts';
+import { getSessionAccount, roleForEmail, statusForSignIn } from './accounts';
 import { assertGoogleClaims } from './googleToken';
 import { nowIso } from '../util/hash';
 
@@ -59,6 +59,13 @@ describe('google admin access', () => {
     expect(() => assertGoogleClaims({ ...base, iss: 'https://evil.example' }, 'client-id')).toThrow(
       /not issued by Google/,
     );
+  });
+
+  it('holds a new member until the admin allows access', () => {
+    expect(statusForSignIn(ADMIN_EMAIL, undefined)).toBe('approved');
+    expect(statusForSignIn('friend@example.com', undefined)).toBe('pending');
+    expect(statusForSignIn('friend@example.com', 'approved')).toBe('approved');
+    expect(statusForSignIn('friend@example.com', 'denied')).toBe('denied');
   });
 
   it('ignores old password sessions that have no Google token', async () => {

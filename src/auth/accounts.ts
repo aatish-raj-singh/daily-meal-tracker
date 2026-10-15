@@ -6,7 +6,7 @@ import {
   putAccount,
   saveAuthSession,
 } from '../db/database';
-import { ADMIN_EMAIL, type Account, type UserRole } from '../types';
+import { ADMIN_EMAIL, type Account, type AccountStatus, type UserRole } from '../types';
 import { nowIso } from '../util/hash';
 import { GOOGLE_CLIENT_ID } from './googleClient';
 import { verifyGoogleIdToken } from './googleToken';
@@ -16,6 +16,11 @@ let verifiedCache: { token: string; account: Account } | null = null;
 
 export function roleForEmail(email: string): UserRole {
   return normalizeEmail(email) === ADMIN_EMAIL ? 'admin' : 'member';
+}
+
+export function statusForSignIn(email: string, existing: AccountStatus | undefined): AccountStatus {
+  if (roleForEmail(email) === 'admin') return 'approved';
+  return existing ?? 'pending';
 }
 
 export async function getSessionAccount(): Promise<Account | null> {
@@ -31,7 +36,11 @@ export async function getSessionAccount(): Promise<Account | null> {
     return null;
   }
   if (verifiedCache?.token === session.idToken) {
-    return verifiedCache.account;
+    const stored = await getAccount(verifiedCache.account.email);
+    if (!stored) return verifiedCache.account;
+    const account = { ...stored, role: roleForEmail(stored.email) };
+    verifiedCache = { token: session.idToken, account };
+    return account;
   }
 
   try {
@@ -68,6 +77,25 @@ export async function logout(): Promise<void> {
   await clearAuthSession();
 }
 
+export async function setAccountStatus(
+  email: string,
+  status: 'approved' | 'denied',
+): Promise<void> {
+  await requireAdmin();
+  const normalized = normalizeEmail(email);
+  if (roleForEmail(normalized) === 'admin') {
+    throw new Error('The admin account stays allowed.');
+  }
+  const existing = await getAccount(normalized);
+  if (!existing) throw new Error('That person has not signed in here.');
+  await putAccount({
+    ...existing,
+    role: 'member',
+    status,
+    updatedAt: nowIso(),
+  });
+}
+
 export async function listAccountsForAdmin(): Promise<Account[]> {
   await requireAdmin();
   const accounts = await getAllAccounts();
@@ -83,7 +111,7 @@ async function upsertFromGoogle(email: string, displayName: string): Promise<Acc
     email: normalized,
     displayName: displayName.trim() || existing?.displayName || normalized,
     role: roleForEmail(normalized),
-    status: 'approved',
+    status: statusForSignIn(normalized, existing?.status),
     createdAt: existing?.createdAt ?? nowIso(),
     updatedAt: nowIso(),
   };
@@ -94,7 +122,7 @@ async function upsertFromGoogle(email: string, displayName: string): Promise<Acc
 async function requireAdmin(): Promise<Account> {
   const account = await getSessionAccount();
   if (!account || account.role !== 'admin' || account.email !== ADMIN_EMAIL) {
-    throw new Error('Only the verified admin Google account can manage access.');
+    throw new Error('You can’t manage people.');
   }
   return account;
 }

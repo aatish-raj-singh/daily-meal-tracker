@@ -101,7 +101,7 @@ function buildShell(host: HTMLElement, account: Account): void {
   });
 
   host.querySelector('#logout-btn')?.addEventListener('click', async () => {
-    if (!window.confirm('Log out of Daily Meal Tracker on this device?')) return;
+    if (!window.confirm('Log out?')) return;
     await logout();
     uiState.tab = 'dashboard';
     clearBanner();
@@ -156,10 +156,10 @@ async function renderView(host: HTMLElement): Promise<void> {
   if (sync) {
     const pending = await getPendingWrites();
     if (pending.length === 0) {
-      sync.textContent = 'Workbook synced';
+      sync.textContent = 'Saved';
       sync.className = 'status-pill ok';
     } else {
-      sync.textContent = `${pending.length} pending`;
+      sync.textContent = `${pending.length} to save`;
       sync.className = 'status-pill warn';
     }
   }

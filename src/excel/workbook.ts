@@ -56,14 +56,12 @@ export async function importWorkbookFile(file: File): Promise<ImportedWorkbook> 
       cellText: false,
       bookVBA: true,
     });
-  } catch (err) {
-    throw new Error(
-      `Failed to read workbook: ${err instanceof Error ? err.message : String(err)}`,
-    );
+  } catch {
+    throw new Error('Couldn’t open this Excel file. Use an .xlsx file.');
   }
 
   if (!workbook.SheetNames.length) {
-    throw new Error('Workbook contains no worksheets.');
+    throw new Error('This Excel file has no sheets.');
   }
 
   const identity: WorkbookIdentity = {
@@ -109,7 +107,7 @@ export function previewSheet(
   maxRows = 8,
 ): SheetPreview {
   const sheet = workbook.Sheets[sheetName];
-  if (!sheet) throw new Error(`Worksheet "${sheetName}" not found.`);
+  if (!sheet) throw new Error(`The sheet “${sheetName}” isn’t in this file.`);
 
   const rows = XLSX.utils.sheet_to_json<(string | number | boolean | null)[]>(sheet, {
     header: 1,
@@ -144,7 +142,84 @@ export function buildDefaultSourceConfig(
     headerRowIndex,
     mapping: suggestSourceMapping(preview.headers),
     previewHeaders: preview.headers,
+    mappingSaved: false,
   };
+}
+
+const NUTRITION_VALUE_FIELDS = [
+  'calories',
+  'protein',
+  'carbohydrates',
+  'fat',
+  'fiber',
+  'sugar',
+  'sodium',
+  'saturatedFat',
+  'cholesterol',
+  'potassium',
+  'calcium',
+  'iron',
+  'vitaminC',
+  'vitaminA',
+] as const satisfies readonly SourceField[];
+
+export interface NutritionSheetRow {
+  foodId: string;
+  foodName: string;
+  basisQuantity: number;
+  basisUnit: string;
+  nutrients: Partial<Record<(typeof NUTRITION_VALUE_FIELDS)[number], number | null>>;
+}
+
+export function appendNutritionRow(
+  data: ArrayBuffer,
+  config: SourceWorkbookConfig,
+  row: NutritionSheetRow,
+): ArrayBuffer {
+  const workbook = XLSX.read(data, { type: 'array', cellDates: true, bookVBA: true });
+  const sheetNamesBefore = [...workbook.SheetNames];
+  const sheet = workbook.Sheets[config.worksheetName];
+  if (!sheet) throw new Error(`The sheet “${config.worksheetName}” isn’t in your food list.`);
+
+  const aoa = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: '',
+    raw: true,
+    blankrows: false,
+  });
+  while (aoa.length <= config.headerRowIndex) aoa.push([]);
+
+  const line: unknown[] = [];
+  const setCell = (field: SourceField, value: string | number | null | undefined) => {
+    const col = config.mapping[field];
+    if (col === null || col === undefined || value === null || value === undefined || value === '') return;
+    while (line.length <= col) line.push('');
+    line[col] = value;
+  };
+
+  setCell('foodId', row.foodId);
+  setCell('foodName', row.foodName);
+  setCell('basisQuantity', row.basisQuantity);
+  setCell('basisUnit', row.basisUnit);
+  for (const field of NUTRITION_VALUE_FIELDS) {
+    setCell(field, row.nutrients[field]);
+  }
+
+  aoa.push(line);
+  const newSheet = XLSX.utils.aoa_to_sheet(aoa);
+  const preserved = XLSX.utils.book_new();
+  for (const name of sheetNamesBefore) {
+    const next = name === config.worksheetName ? newSheet : workbook.Sheets[name];
+    if (!next) throw new Error(`The sheet “${name}” isn’t in your food list.`);
+    XLSX.utils.book_append_sheet(preserved, next, name);
+  }
+
+  const out = XLSX.write(preserved, { type: 'array', bookType: 'xlsx', bookSST: false });
+  if (out instanceof ArrayBuffer) return out;
+  if (out instanceof Uint8Array) {
+    return out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) as ArrayBuffer;
+  }
+  return Uint8Array.from(out as number[]).buffer as ArrayBuffer;
 }
 
 export function buildDefaultDestinationConfig(
@@ -161,6 +236,7 @@ export function buildDefaultDestinationConfig(
     previewHeaders: preview.headers,
     lastVerifiedExportAt: null,
     lastBackupAt: null,
+    mappingSaved: false,
   };
 }
 
@@ -182,7 +258,7 @@ export function loadSourceFoods(
   config: SourceWorkbookConfig,
 ): SourceFood[] {
   const sheet = workbook.Sheets[config.worksheetName];
-  if (!sheet) throw new Error(`Source worksheet "${config.worksheetName}" not found.`);
+  if (!sheet) throw new Error(`The sheet “${config.worksheetName}” isn’t in your food list.`);
 
   const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
     header: 1,
@@ -365,7 +441,7 @@ export function applyEntryToDestinationWorkbook(
   const width = Math.max(headers.length, 16);
   const entryIdCol = mapping.entryId;
   if (entryIdCol === null || entryIdCol === undefined) {
-    throw new Error('Destination mapping requires Entry_ID column.');
+    throw new Error('Match the Entry ID column in your meal log.');
   }
 
   // Remove existing rows with this Entry_ID (idempotent)
@@ -393,7 +469,7 @@ export function applyEntryToDestinationWorkbook(
     const sheet =
       name === config.worksheetName ? newSheet : workbook.Sheets[name];
     if (!sheet) {
-      throw new Error(`Worksheet "${name}" missing while preserving destination workbook.`);
+      throw new Error(`The sheet “${name}” is missing from the meal log.`);
     }
     XLSX.utils.book_append_sheet(preserved, sheet, name);
   }
@@ -419,7 +495,7 @@ export function applyEntryToDestinationWorkbook(
   const verifyWb = XLSX.read(bytes, { type: 'array' });
   const verifySheet = verifyWb.Sheets[config.worksheetName];
   if (!verifySheet) {
-    throw new Error(`Destination worksheet "${config.worksheetName}" missing after write.`);
+    throw new Error(`The sheet “${config.worksheetName}” is missing from the meal log.`);
   }
   const verifyRows = XLSX.utils.sheet_to_json<unknown[]>(verifySheet, {
     header: 1,
@@ -437,7 +513,7 @@ export function applyEntryToDestinationWorkbook(
   // Confirm other sheets still present
   for (const name of sheetNamesBefore) {
     if (!verifyWb.SheetNames.includes(name)) {
-      throw new Error(`Unrelated worksheet "${name}" was lost during export.`);
+      throw new Error(`The sheet “${name}” was missing from the downloaded file.`);
     }
   }
 

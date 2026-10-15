@@ -3,9 +3,17 @@ import {
   getCachedSourceFoods,
   listHistory,
 } from '../services/foodLog';
-import { MEAL_LABELS, type MealCategory } from '../types';
+import { MEAL_LABELS, type FoodEntry, type MealCategory } from '../types';
 import { escapeHtml, formatNumber, todayLocal } from '../util/hash';
-import { setBanner, uiState } from './state';
+import { saveStatusNote, setBanner, uiState } from './state';
+
+function statusLine(entry: FoodEntry): string {
+  const parts = [saveStatusNote(entry.syncStatus), entry.syncError].filter(
+    (part): part is string => Boolean(part),
+  );
+  if (parts.length === 0) return '';
+  return `<div class="meta">${parts.map((part) => escapeHtml(part)).join(' · ')}</div>`;
+}
 
 export async function renderHistory(root: HTMLElement): Promise<void> {
   const today = todayLocal();
@@ -52,7 +60,7 @@ export async function renderHistory(root: HTMLElement): Promise<void> {
 
     ${
       byDate.size === 0
-        ? '<div class="card"><p class="muted">No entries in this range.</p></div>'
+        ? ''
         : [...byDate.entries()]
             .map(([date, dayEntries]) => {
               const cal = dayEntries.reduce((s, e) => s + (e.nutrients.calories ?? 0), 0);
@@ -72,7 +80,7 @@ export async function renderHistory(root: HTMLElement): Promise<void> {
                         C ${formatNumber(e.nutrients.carbohydrates, 1)} ·
                         F ${formatNumber(e.nutrients.fat, 1)}
                       </div>
-                      <div class="meta">Basis ${e.basisQuantity} ${escapeHtml(e.basisUnit)} · source ID ${escapeHtml(e.sourceFoodId)} · sync ${escapeHtml(e.syncStatus)}${e.syncError ? ` · ${escapeHtml(e.syncError)}` : ''}</div>
+                      ${statusLine(e)}
                       <div class="btn-row">
                         <button class="secondary edit-btn" data-id="${escapeHtml(e.entryId)}">Edit</button>
                         <button class="danger delete-btn" data-id="${escapeHtml(e.entryId)}">Delete</button>
@@ -111,7 +119,7 @@ export async function renderHistory(root: HTMLElement): Promise<void> {
       if (!match) {
         setBanner(
           'error',
-          'Could not match this entry to the current nutrition source. Remap or re-import the source workbook, then edit again.',
+          'This food is no longer in your food list. Add the spreadsheet again, then edit.',
         );
         window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
         return;
@@ -129,7 +137,7 @@ export async function renderHistory(root: HTMLElement): Promise<void> {
       const entry = entries.find((e) => e.entryId === id);
       if (!entry) return;
       const ok = window.confirm(
-        `Delete "${entry.sourceFoodName}" on ${entry.date}? This updates the local log and queues destination workbook sync.`,
+        `Delete ${entry.sourceFoodName} from ${entry.date}?`,
       );
       if (!ok) return;
       try {

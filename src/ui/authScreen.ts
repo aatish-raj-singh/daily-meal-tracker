@@ -1,6 +1,6 @@
 import { logout } from '../auth/accounts';
 import { googleSignInConfigured, renderGoogleSignInButton } from '../auth/googleSignIn';
-import { ADMIN_EMAIL, type Account, type AccountStatus } from '../types';
+import { type Account, type AccountStatus } from '../types';
 import { escapeHtml } from '../util/hash';
 
 export async function renderAuthGate(
@@ -16,13 +16,12 @@ export async function renderAuthGate(
     <main class="auth-wrap">
       <div class="card">
         <h1>Daily Meal Tracker</h1>
-        <p class="muted">Sign in with Google. Admin access is granted only to the verified account ${escapeHtml(ADMIN_EMAIL)}. Every other Google account is a regular user.</p>
         <p id="auth-error" class="banner error" hidden></p>
         <div id="google-button"></div>
         ${
           googleSignInConfigured()
             ? ''
-            : `<div class="banner warning">Google sign-in is not configured yet. Add a Google OAuth web client ID as <code>VITE_GOOGLE_CLIENT_ID</code> before this button can appear.</div>`
+            : `<div class="banner warning">Sign-in unavailable</div>`
         }
       </div>
     </main>
@@ -48,7 +47,6 @@ function renderLocked(host: HTMLElement, account: Account): void {
     <main class="auth-wrap">
       <div class="card">
         <h1>${escapeHtml(statusTitle(account.status))}</h1>
-        <p class="muted">${escapeHtml(statusBody(account.status))}</p>
         <p><strong>${escapeHtml(account.displayName)}</strong><br>${escapeHtml(account.email)}</p>
         <div class="btn-row">
           <button type="button" class="ghost" id="locked-logout">Use another account</button>
@@ -70,21 +68,6 @@ function statusTitle(status: AccountStatus): string {
       return 'Access denied';
     case 'approved':
       return 'Signed in';
-    default: {
-      const exhaustive: never = status;
-      return exhaustive;
-    }
-  }
-}
-
-function statusBody(status: AccountStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'This Google account is not approved on this device.';
-    case 'denied':
-      return 'This Google account is not allowed on this device.';
-    case 'approved':
-      return 'Access granted.';
     default: {
       const exhaustive: never = status;
       return exhaustive;

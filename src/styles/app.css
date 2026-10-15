@@ -119,6 +119,7 @@ main {
 .auth-wrap {
   min-height: 100dvh;
   display: flex;
+  align-items: flex-start;
   justify-content: center;
   padding: 28px 16px 40px;
 }

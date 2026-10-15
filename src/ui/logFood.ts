@@ -2,63 +2,78 @@ import { getSettings, saveSettings } from '../db/database';
 import { calculateNutrients } from '../nutrition/calc';
 import { compatibleUnitsFor } from '../nutrition/units';
 import { getCachedSourceFoods, saveFoodEntry } from '../services/foodLog';
-import { MEAL_LABELS, type MealCategory, type SourceFood } from '../types';
+import {
+  MEAL_LABELS,
+  type MealCategory,
+  type NutrientValues,
+  type SourceFood,
+} from '../types';
 import { escapeHtml, formatNumber } from '../util/hash';
 import { setBanner, uiState } from './state';
 
-export async function renderLogFood(root: HTMLElement): Promise<void> {
+const NUTRIENT_BREAKDOWN: Array<{
+  key: keyof NutrientValues;
+  label: string;
+  unit: string;
+  decimals: number;
+}> = [
+  { key: 'calories', label: 'Calories', unit: 'kcal', decimals: 0 },
+  { key: 'protein', label: 'Protein', unit: 'g', decimals: 1 },
+  { key: 'carbohydrates', label: 'Carbohydrates', unit: 'g', decimals: 1 },
+  { key: 'fat', label: 'Fat', unit: 'g', decimals: 1 },
+  { key: 'fiber', label: 'Fiber', unit: 'g', decimals: 1 },
+  { key: 'sugar', label: 'Sugar', unit: 'g', decimals: 1 },
+  { key: 'saturatedFat', label: 'Saturated fat', unit: 'g', decimals: 1 },
+  { key: 'cholesterol', label: 'Cholesterol', unit: '', decimals: 1 },
+  { key: 'sodium', label: 'Sodium', unit: '', decimals: 1 },
+  { key: 'potassium', label: 'Potassium', unit: '', decimals: 1 },
+  { key: 'calcium', label: 'Calcium', unit: '', decimals: 1 },
+  { key: 'iron', label: 'Iron', unit: '', decimals: 1 },
+  { key: 'vitaminC', label: 'Vitamin C', unit: '', decimals: 1 },
+  { key: 'vitaminA', label: 'Vitamin A', unit: '', decimals: 1 },
+];
+
+function breakdownTable(nutrients: NutrientValues): string {
+  const rows = NUTRIENT_BREAKDOWN.map((row) => {
+    const value = nutrients[row.key];
+    const amount =
+      value === null || value === undefined
+        ? '—'
+        : `${formatNumber(value, row.decimals)}${row.unit ? ` ${row.unit}` : ''}`;
+    return `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${escapeHtml(amount)}</td></tr>`;
+  }).join('');
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nutrient</th><th>Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+export async function renderLogFood(
+  root: HTMLElement,
+  options?: { heading?: string; useEditing?: boolean },
+): Promise<void> {
+  const useEditing = options?.useEditing !== false;
   const settings = await getSettings();
   const foods = await getCachedSourceFoods();
   const selected = uiState.selectedFood;
-  const editing = uiState.editingEntry;
+  const editing = useEditing ? uiState.editingEntry : null;
 
-  const initialQty = editing?.quantity ?? 100;
-  const initialUnit = editing?.unit ?? selected?.basisUnit ?? 'g';
-  const initialMeal = editing?.meal ?? 'breakfast';
-  const initialDate = editing?.date ?? settings.selectedDate;
-  const initialNotes = editing?.notes ?? '';
   const unitOptions = selected
     ? compatibleUnitsFor(selected.basisUnit)
     : ['g', 'kg', 'ml', 'serving'];
-
-  let previewHtml = '<p class="muted">Select a food and quantity to preview nutrition.</p>';
-  if (selected) {
-    const calc = calculateNutrients({
-      sourceFood: selected,
-      quantity: initialQty,
-      unit: initialUnit,
-      caloriesDecimals: settings.rounding.caloriesDecimals,
-      macroDecimals: settings.rounding.macroDecimals,
-    });
-    if (calc.ok) {
-      previewHtml = `
-        <div class="stack-sm">
-          <div><strong>${escapeHtml(selected.foodName)}</strong> <span class="muted">(ID: ${escapeHtml(selected.foodId)})</span></div>
-          <div class="muted">Basis: ${selected.basisQuantity} ${escapeHtml(selected.basisUnit)} from ${escapeHtml(selected.sourceFileName)} / ${escapeHtml(selected.sourceWorksheet)}</div>
-          <div>Calories: <strong>${formatNumber(calc.nutrients.calories, 0)}</strong></div>
-          <div>Protein: <strong>${formatNumber(calc.nutrients.protein, 1)} g</strong></div>
-          <div>Carbs: <strong>${formatNumber(calc.nutrients.carbohydrates, 1)} g</strong></div>
-          <div>Fat: <strong>${formatNumber(calc.nutrients.fat, 1)} g</strong></div>
-          <div>Fiber: <strong>${formatNumber(calc.nutrients.fiber, 1)} g</strong></div>
-          ${
-            calc.missingAsUnknown.length
-              ? `<div class="muted">Unknown in source (not treated as zero): ${calc.missingAsUnknown.map(escapeHtml).join(', ')}</div>`
-              : ''
-          }
-        </div>`;
-    } else {
-      previewHtml = `<p class="banner error">${escapeHtml(calc.error ?? 'Invalid quantity/unit')}</p>`;
-    }
-  }
+  const typedWeight = (root.querySelector('#log-qty') as HTMLInputElement | null)?.value;
+  const initialQty = typedWeight !== undefined ? typedWeight : (editing?.quantity ?? '');
+  const initialUnit = editing?.unit ?? (unitOptions.includes('g') ? 'g' : (unitOptions[0] ?? 'g'));
+  const initialMeal = editing?.meal ?? 'breakfast';
+  const initialDate = editing?.date ?? settings.selectedDate;
+  const initialNotes = editing?.notes ?? '';
 
   root.innerHTML = `
     <div class="card">
-      <h2>${editing ? 'Edit food entry' : 'Log food'}</h2>
-      ${
-        foods.length === 0
-          ? '<div class="banner warning">Import and map a nutrition source workbook in the Excel tab before logging food.</div>'
-          : ''
-      }
+      <h2>${escapeHtml(options?.heading ?? (editing ? 'Edit food entry' : 'Log food'))}</h2>
       <div class="grid-2">
         <div class="field">
           <label for="log-date">Date</label>
@@ -77,14 +92,14 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
         </div>
       </div>
       <div class="field">
-        <label for="food-search">Search food database</label>
-        <input id="food-search" type="search" placeholder="Type a food name or ID" value="${escapeHtml(selected?.foodName ?? '')}" ${foods.length ? '' : 'disabled'} />
+        <label for="food-search">Food</label>
+        <input id="food-search" type="search" placeholder="Search" value="${escapeHtml(selected?.foodName ?? '')}" ${foods.length ? '' : 'disabled'} />
       </div>
       <div id="food-results" class="search-results" role="listbox" aria-label="Food matches"></div>
       <div class="grid-2" style="margin-top:10px">
         <div class="field">
-          <label for="log-qty">Quantity</label>
-          <input id="log-qty" type="number" min="0" step="any" value="${initialQty}" />
+          <label for="log-qty">Weight</label>
+          <input id="log-qty" type="number" min="0" step="any" inputmode="decimal" value="${initialQty}" />
         </div>
         <div class="field">
           <label for="log-unit">Unit</label>
@@ -105,13 +120,12 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
     </div>
 
     <div class="card">
-      <h3>Nutrition preview</h3>
-      <div id="nutrition-preview">${previewHtml}</div>
+      <h2>Breakdown</h2>
+      <div id="nutrition-preview"></div>
       <div class="btn-row">
-        <button class="primary" id="save-entry" ${selected ? '' : 'disabled'}>${editing ? 'Update entry' : 'Save entry'}</button>
-        ${editing ? '<button class="ghost" id="cancel-edit">Cancel edit</button>' : ''}
+        <button class="primary" id="save-entry" disabled>${editing ? 'Update tracker' : 'Add to tracker'}</button>
+        ${editing ? '<button class="ghost" id="cancel-edit">Cancel</button>' : ''}
       </div>
-      <p class="muted" style="margin-top:10px">Values are calculated from the source workbook row and nutrition basis. Nothing is invented.</p>
     </div>
   `;
 
@@ -138,7 +152,7 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
             : '';
         return `<button type="button" class="${selectedCls}" data-id="${escapeHtml(f.foodId)}" data-row="${f.rowIndex}">
           <strong>${escapeHtml(f.foodName)}</strong>
-          <div class="muted">ID ${escapeHtml(f.foodId)} · per ${f.basisQuantity} ${escapeHtml(f.basisUnit)} · ${formatNumber(f.nutrients.calories, 0)} kcal</div>
+          <div class="muted">${f.basisQuantity} ${escapeHtml(f.basisUnit)} · ${formatNumber(f.nutrients.calories, 0)} kcal</div>
         </button>`;
       })
       .join('');
@@ -149,7 +163,7 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
         const row = Number(btn.getAttribute('data-row'));
         const food = foods.find((f) => f.foodId === id && f.rowIndex === row) ?? null;
         uiState.selectedFood = food;
-        void renderLogFood(root);
+        void renderLogFood(root, options);
       });
     });
   };
@@ -157,47 +171,53 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
   renderResults(searchInput.value);
   searchInput.addEventListener('input', () => renderResults(searchInput.value));
 
+  const saveButton = root.querySelector('#save-entry') as HTMLButtonElement;
+
   const refreshPreview = () => {
-    if (!uiState.selectedFood) return;
+    const box = root.querySelector('#nutrition-preview')!;
+    const food = uiState.selectedFood;
     const qty = Number(qtyInput.value);
-    const unit = unitSelect.value;
+    if (!food || !(qty > 0)) {
+      box.innerHTML = '';
+      saveButton.disabled = true;
+      return;
+    }
     const calc = calculateNutrients({
-      sourceFood: uiState.selectedFood,
+      sourceFood: food,
       quantity: qty,
-      unit,
+      unit: unitSelect.value,
       caloriesDecimals: settings.rounding.caloriesDecimals,
       macroDecimals: settings.rounding.macroDecimals,
     });
-    const box = root.querySelector('#nutrition-preview')!;
     if (!calc.ok) {
       box.innerHTML = `<p class="banner error">${escapeHtml(calc.error ?? 'Invalid')}</p>`;
+      saveButton.disabled = true;
       return;
     }
     box.innerHTML = `
       <div class="stack-sm">
-        <div><strong>${escapeHtml(uiState.selectedFood.foodName)}</strong></div>
-        <div class="muted">Basis: ${uiState.selectedFood.basisQuantity} ${escapeHtml(uiState.selectedFood.basisUnit)}</div>
-        <div>Calories: <strong>${formatNumber(calc.nutrients.calories, 0)}</strong></div>
-        <div>Protein: <strong>${formatNumber(calc.nutrients.protein, 1)} g</strong></div>
-        <div>Carbs: <strong>${formatNumber(calc.nutrients.carbohydrates, 1)} g</strong></div>
-        <div>Fat: <strong>${formatNumber(calc.nutrients.fat, 1)} g</strong></div>
-        <div>Fiber: <strong>${formatNumber(calc.nutrients.fiber, 1)} g</strong></div>
+        <div><strong>${escapeHtml(food.foodName)}</strong> · ${qty} ${escapeHtml(unitSelect.value)}</div>
+        ${breakdownTable(calc.nutrients)}
       </div>`;
+    saveButton.disabled = false;
   };
 
   qtyInput.addEventListener('input', refreshPreview);
   unitSelect.addEventListener('change', refreshPreview);
+  refreshPreview();
 
   root.querySelector('#cancel-edit')?.addEventListener('click', () => {
     uiState.editingEntry = null;
     uiState.selectedFood = null;
-    void renderLogFood(root);
+    const qty = root.querySelector('#log-qty') as HTMLInputElement | null;
+    if (qty) qty.value = '';
+    void renderLogFood(root, options);
   });
 
   root.querySelector('#save-entry')?.addEventListener('click', async () => {
     const food = uiState.selectedFood as SourceFood | null;
     if (!food) {
-      setBanner('error', 'Choose a matching food from the source workbook.');
+      setBanner('error', 'Choose a food from your list.');
       return;
     }
     try {
@@ -206,6 +226,18 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
       const quantity = Number((root.querySelector('#log-qty') as HTMLInputElement).value);
       const unit = (root.querySelector('#log-unit') as HTMLSelectElement).value;
       const notes = (root.querySelector('#log-notes') as HTMLTextAreaElement).value;
+      const preview = calculateNutrients({
+        sourceFood: food,
+        quantity,
+        unit,
+        caloriesDecimals: settings.rounding.caloriesDecimals,
+        macroDecimals: settings.rounding.macroDecimals,
+      });
+      if (!preview.ok) {
+        setBanner('error', preview.error ?? 'Enter a weight.');
+        refreshPreview();
+        return;
+      }
 
       const s = await getSettings();
       s.selectedDate = date;
@@ -218,10 +250,11 @@ export async function renderLogFood(root: HTMLElement): Promise<void> {
         quantity,
         unit,
         notes,
-        entryId: uiState.editingEntry?.entryId,
+        entryId: editing?.entryId,
       });
 
       uiState.editingEntry = null;
+      uiState.selectedFood = null;
       setBanner(result.workbookSynced ? 'success' : 'warning', result.message);
       uiState.tab = 'dashboard';
       window.dispatchEvent(new CustomEvent('meal-tracker:navigate', { detail: 'dashboard' }));

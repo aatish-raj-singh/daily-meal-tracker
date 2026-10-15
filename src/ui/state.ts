@@ -1,4 +1,4 @@
-import type { FoodEntry, SourceFood } from '../types';
+import type { FoodEntry, SourceFood, SyncStatus } from '../types';
 
 export type TabId = 'dashboard' | 'log' | 'history' | 'excel' | 'settings' | 'admin';
 
@@ -27,4 +27,20 @@ export function setBanner(
 
 export function clearBanner(): void {
   uiState.banner = null;
+}
+
+export function saveStatusNote(status: SyncStatus): string {
+  switch (status) {
+    case 'synced':
+      return '';
+    case 'pending':
+    case 'local_only':
+      return 'waiting to save';
+    case 'failed':
+      return 'couldn’t save';
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
 }

@@ -1,6 +1,6 @@
 export const APP_VERSION = '1.2.0';
 export const DB_NAME = 'daily-meal-tracker';
-export const DB_VERSION = 3;
+export const DB_VERSION = 4;
 export const ADMIN_EMAIL = 'biasthakur.aatish@gmail.com';
 
 export type MealCategory = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'other';
@@ -65,6 +65,8 @@ export interface SourceWorkbookConfig {
   headerRowIndex: number;
   mapping: Partial<Record<SourceField, number | null>>;
   previewHeaders: string[];
+  /** False while the sheet form is open. True after the user saves the nutrition sheet. */
+  mappingSaved?: boolean;
 }
 
 export interface DestinationWorkbookConfig {
@@ -75,6 +77,8 @@ export interface DestinationWorkbookConfig {
   previewHeaders: string[];
   lastVerifiedExportAt: string | null;
   lastBackupAt: string | null;
+  /** False while the sheet form is open. True after the user saves the meal log. */
+  mappingSaved?: boolean;
 }
 
 export interface DailyTargets {

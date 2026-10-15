@@ -1,6 +1,7 @@
 import { getDashboardData } from '../services/foodLog';
 import { MEAL_LABELS, type MealCategory } from '../types';
 import { escapeHtml, formatNumber } from '../util/hash';
+import { saveStatusNote } from './state';
 import { getSettings, saveSettings } from '../db/database';
 
 function pct(value: number, target: number): number {
@@ -16,7 +17,7 @@ function remainingLabel(value: number, target: number, unit: string): string {
 
 export async function renderDashboard(root: HTMLElement): Promise<void> {
   const settings = await getSettings();
-  const { entries, totals, pendingCount } = await getDashboardData(settings.selectedDate);
+  const { entries, totals } = await getDashboardData(settings.selectedDate);
   const t = settings.targets;
   const calPct = pct(totals.calories, t.calories);
 
@@ -26,11 +27,6 @@ export async function renderDashboard(root: HTMLElement): Promise<void> {
         <label for="dash-date">Date</label>
         <input id="dash-date" type="date" value="${escapeHtml(settings.selectedDate)}" />
       </div>
-      ${
-        pendingCount
-          ? `<p class="muted" style="margin:10px 0 0">Workbook sync pending: ${pendingCount} operation(s).</p>`
-          : ''
-      }
     </div>
 
     <div class="card">
@@ -80,21 +76,16 @@ export async function renderDashboard(root: HTMLElement): Promise<void> {
       <h2>Foods today</h2>
       ${
         entries.length === 0
-          ? '<p class="muted">No foods logged for this date.</p>'
+          ? ''
           : `<div class="list">${entries
               .map(
                 (e) => `
             <div class="list-item">
               <div class="title">${escapeHtml(e.sourceFoodName)} <span class="meal-chip">${MEAL_LABELS[e.meal]}</span></div>
-              <div class="meta">${e.quantity} ${escapeHtml(e.unit)} · ${formatNumber(e.nutrients.calories, 0)} kcal · sync: ${escapeHtml(e.syncStatus)}</div>
+              <div class="meta">${e.quantity} ${escapeHtml(e.unit)} · ${formatNumber(e.nutrients.calories, 0)} kcal${saveStatusNote(e.syncStatus) ? ` · ${saveStatusNote(e.syncStatus)}` : ''}</div>
             </div>`,
               )
               .join('')}</div>`
-      }
-      ${
-        totals.unknownNutrients.length
-          ? `<p class="muted" style="margin-top:10px">Some nutrients are unknown in source data and are excluded from totals rather than treated as zero: ${totals.unknownNutrients.map(escapeHtml).join(', ')}.</p>`
-          : ''
       }
     </div>
   `;

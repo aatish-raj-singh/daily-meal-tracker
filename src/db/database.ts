@@ -59,6 +59,10 @@ interface MealTrackerDB extends DBSchema {
     key: 'jwks';
     value: GoogleCertCache;
   };
+  fileHandles: {
+    key: 'source' | 'destination';
+    value: { id: 'source' | 'destination'; handle: FileSystemFileHandle };
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<MealTrackerDB>> | null = null;
@@ -99,6 +103,9 @@ export function getDb(): Promise<IDBPDatabase<MealTrackerDB>> {
         }
         if (!db.objectStoreNames.contains('googleCerts')) {
           db.createObjectStore('googleCerts');
+        }
+        if (!db.objectStoreNames.contains('fileHandles')) {
+          db.createObjectStore('fileHandles');
         }
       },
     });
@@ -308,6 +315,7 @@ export async function clearAllData(): Promise<void> {
       'accounts',
       'session',
       'googleCerts',
+      'fileHandles',
     ],
     'readwrite',
   );
@@ -322,6 +330,7 @@ export async function clearAllData(): Promise<void> {
     tx.objectStore('accounts').clear(),
     tx.objectStore('session').clear(),
     tx.objectStore('googleCerts').clear(),
+    tx.objectStore('fileHandles').clear(),
   ]);
   await tx.done;
 }
@@ -348,7 +357,7 @@ export async function checkStorageHealth(): Promise<StorageHealth> {
   };
 
   if (!result.indexedDbAvailable) {
-    result.error = 'IndexedDB is not available in this browser.';
+    result.error = 'This browser can’t store meals on this device.';
     return result;
   }
 
