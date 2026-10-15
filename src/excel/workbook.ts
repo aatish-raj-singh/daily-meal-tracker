@@ -8,11 +8,13 @@ import type {
   SourceFood,
   SourceWorkbookConfig,
   WorkbookIdentity,
+  WorkoutExercise,
+  WorkoutWorkbookConfig,
 } from '../types';
 import { emptyNutrients } from '../nutrition/calc';
 import { sha256Hex, nowIso } from '../util/hash';
 import { detectWorkbookFeatures } from './features';
-import { suggestDestinationMapping, suggestSourceMapping } from './mapping';
+import { suggestDestinationMapping, suggestSourceMapping, suggestWorkoutMapping } from './mapping';
 
 export interface ImportedWorkbook {
   identity: WorkbookIdentity;
@@ -144,6 +146,71 @@ export function buildDefaultSourceConfig(
     previewHeaders: preview.headers,
     mappingSaved: false,
   };
+}
+
+export function buildDefaultWorkoutConfig(
+  imported: ImportedWorkbook,
+  worksheetName: string,
+  headerRowIndex = 0,
+): WorkoutWorkbookConfig {
+  const preview = previewSheet(imported.workbook, worksheetName, headerRowIndex);
+  return {
+    identity: imported.identity,
+    worksheetName,
+    headerRowIndex,
+    mapping: suggestWorkoutMapping(preview.headers),
+    previewHeaders: preview.headers,
+    mappingSaved: false,
+  };
+}
+
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+
+export function weekdayName(isoDate: string): (typeof WEEKDAYS)[number] {
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const date = new Date(year, (month || 1) - 1, day || 1);
+  return WEEKDAYS[date.getDay()] ?? 'Sunday';
+}
+
+export function exercisesForWeekday(rows: WorkoutExercise[], weekday: string): WorkoutExercise[] {
+  return rows.filter((row) => dayMatches(row.day, weekday));
+}
+
+export function loadWorkoutExercises(
+  workbook: XLSX.WorkBook,
+  config: WorkoutWorkbookConfig,
+): WorkoutExercise[] {
+  const sheet = workbook.Sheets[config.worksheetName];
+  if (!sheet) throw new Error(`The sheet “${config.worksheetName}” isn’t in your workout plan.`);
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, {
+    header: 1,
+    defval: '',
+    raw: false,
+    blankrows: false,
+  });
+  const map = config.mapping;
+  const exercises: WorkoutExercise[] = [];
+  for (let i = config.headerRowIndex + 1; i < rows.length; i += 1) {
+    const row = rows[i] ?? [];
+    const day = cellString(row[map.day ?? -1]);
+    const exercise = cellString(row[map.exercise ?? -1]);
+    if (!day || !exercise) continue;
+    exercises.push({
+      day,
+      exercise,
+      sets: cellString(row[map.sets ?? -1]),
+      reps: cellString(row[map.reps ?? -1]),
+      notes: cellString(row[map.notes ?? -1]),
+    });
+  }
+  return exercises;
+}
+
+function dayMatches(value: string, weekday: string): boolean {
+  const cell = value.trim().toLowerCase();
+  const full = weekday.trim().toLowerCase();
+  const short = full.slice(0, 3);
+  return cell === full || cell === short || cell.startsWith(`${full} `) || cell.startsWith(`${full}-`) || cell.startsWith(`${short} `);
 }
 
 const NUTRITION_VALUE_FIELDS = [

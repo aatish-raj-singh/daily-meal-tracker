@@ -1,4 +1,4 @@
-import type { DestinationField, SourceField } from '../types';
+import type { DestinationField, SourceField, WorkoutField } from '../types';
 
 const SOURCE_ALIASES: Record<SourceField, string[]> = {
   foodId: ['food id', 'food_id', 'id', 'item id', 'item_id', 'code', 'food code'],
@@ -59,6 +59,14 @@ const DESTINATION_ALIASES: Record<DestinationField, string[]> = {
   lastModified: ['last modified', 'updated', 'updated at', 'modified'],
 };
 
+const WORKOUT_ALIASES: Record<WorkoutField, string[]> = {
+  day: ['day', 'weekday', 'week day', 'split day'],
+  exercise: ['exercise', 'movement', 'lift', 'workout', 'name'],
+  sets: ['sets', 'set'],
+  reps: ['reps', 'repetitions', 'rep'],
+  notes: ['notes', 'note', 'comment', 'comments'],
+};
+
 function normalizeHeader(header: unknown): string {
   return String(header ?? '')
     .trim()
@@ -71,6 +79,12 @@ export function suggestSourceMapping(
   headers: string[],
 ): Partial<Record<SourceField, number | null>> {
   return suggestMapping(headers, SOURCE_ALIASES);
+}
+
+export function suggestWorkoutMapping(
+  headers: string[],
+): Partial<Record<WorkoutField, number | null>> {
+  return suggestMapping(headers, WORKOUT_ALIASES);
 }
 
 export function suggestDestinationMapping(
@@ -125,6 +139,13 @@ export function requiredSourceFieldsMapped(
     'fat',
   ];
   return required.filter((f) => mapping[f] === null || mapping[f] === undefined);
+}
+
+export function requiredWorkoutFieldsMapped(
+  mapping: Partial<Record<WorkoutField, number | null>>,
+): string[] {
+  const required: WorkoutField[] = ['day', 'exercise'];
+  return required.filter((field) => mapping[field] === null || mapping[field] === undefined);
 }
 
 export function requiredDestinationFieldsMapped(

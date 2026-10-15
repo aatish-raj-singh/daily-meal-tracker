@@ -1,7 +1,7 @@
 import { getBlob, getDb, putBlob } from '../db/database';
 import { downloadBlob, nowIso, sha256Hex } from '../util/hash';
 
-export type WorkbookKind = 'source' | 'destination';
+export type WorkbookKind = 'source' | 'destination' | 'workout';
 
 export type PickerStatus = 'file' | 'downloaded' | 'cancelled' | 'unsupported';
 
@@ -56,6 +56,7 @@ async function permission(
 const fileQueues: Record<WorkbookKind, Promise<unknown>> = {
   source: Promise.resolve(),
   destination: Promise.resolve(),
+  workout: Promise.resolve(),
 };
 
 function queued<T>(kind: WorkbookKind, task: () => Promise<T>): Promise<T> {
@@ -78,9 +79,18 @@ function wait(ms: number): Promise<void> {
 }
 
 function busyMessage(kind: WorkbookKind): string {
-  return kind === 'source'
-    ? 'The nutrition file is busy. Close it in Excel and try again.'
-    : 'The meal log file is busy. Close it in Excel and try again.';
+  switch (kind) {
+    case 'source':
+      return 'The nutrition file is busy. Close it in Excel and try again.';
+    case 'destination':
+      return 'The meal log file is busy. Close it in Excel and try again.';
+    case 'workout':
+      return 'The workout plan file is busy. Close it in Excel and try again.';
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
 }
 
 async function readHandle(
@@ -126,11 +136,22 @@ async function refreshNow(kind: WorkbookKind): Promise<boolean> {
 
 async function requireWriteAccess(kind: WorkbookKind, handle: FileSystemFileHandle): Promise<void> {
   if (await permission(handle, 'readwrite', true)) return;
-  throw new Error(
-    kind === 'source'
-      ? 'Allow access to the nutrition file to save it.'
-      : 'Allow access to the meal log file to save it.',
-  );
+  throw new Error(writeAccessMessage(kind));
+}
+
+function writeAccessMessage(kind: WorkbookKind): string {
+  switch (kind) {
+    case 'source':
+      return 'Allow access to the nutrition file to save it.';
+    case 'destination':
+      return 'Allow access to the meal log file to save it.';
+    case 'workout':
+      return 'Allow access to the workout plan file to save it.';
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
 }
 
 export function writeBoundFile(kind: WorkbookKind, data: ArrayBuffer): Promise<boolean> {

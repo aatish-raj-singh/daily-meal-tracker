@@ -40,7 +40,7 @@ export async function renderSettings(root: HTMLElement): Promise<void> {
       <h2>Backup</h2>
       <div class="btn-row">
         <button class="secondary" id="backup-json">Download backup</button>
-        <label class="secondary" style="display:inline-flex;align-items:center;padding:11px 14px;border-radius:12px;border:1px solid rgba(56,189,248,.35)">
+        <label class="secondary file-btn">
           Restore backup
           <input id="restore-json" type="file" accept="application/json,.json" class="sr-only" />
         </label>

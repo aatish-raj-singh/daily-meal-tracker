@@ -1,6 +1,6 @@
 export const APP_VERSION = '1.3.0';
 export const DB_NAME = 'daily-meal-tracker';
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const ADMIN_EMAIL = 'biasthakur.aatish@gmail.com';
 
 export type MealCategory = 'breakfast' | 'lunch' | 'dinner' | 'snack' | 'other';
@@ -26,6 +26,8 @@ export type SourceField =
   | 'iron'
   | 'vitaminC'
   | 'vitaminA';
+
+export type WorkoutField = 'day' | 'exercise' | 'sets' | 'reps' | 'notes';
 
 export type DestinationField =
   | 'entryId'
@@ -67,6 +69,24 @@ export interface SourceWorkbookConfig {
   previewHeaders: string[];
   /** False while the sheet form is open. True after the user saves the nutrition sheet. */
   mappingSaved?: boolean;
+}
+
+export interface WorkoutWorkbookConfig {
+  identity: WorkbookIdentity;
+  worksheetName: string;
+  headerRowIndex: number;
+  mapping: Partial<Record<WorkoutField, number | null>>;
+  previewHeaders: string[];
+  /** False while the sheet form is open. True after the user saves the workout plan. */
+  mappingSaved?: boolean;
+}
+
+export interface WorkoutExercise {
+  day: string;
+  exercise: string;
+  sets: string;
+  reps: string;
+  notes: string;
 }
 
 export interface DestinationWorkbookConfig {
@@ -173,7 +193,7 @@ export interface RecoveryMeta {
 }
 
 export interface StoredBlob {
-  id: 'source' | 'destination' | 'destination-recovery';
+  id: 'source' | 'destination' | 'destination-recovery' | 'workout';
   fileName: string;
   mimeType: string;
   data: ArrayBuffer;
@@ -248,11 +268,20 @@ export interface JsonBackupPayload {
   settings: AppSettings;
   sourceConfig: SourceWorkbookConfig | null;
   destinationConfig: DestinationWorkbookConfig | null;
+  workoutConfig?: WorkoutWorkbookConfig | null;
   entries: FoodEntry[];
   pendingWrites: PendingWrite[];
   recovery: RecoveryMeta;
   accounts?: Account[];
 }
+
+export const WORKOUT_FIELD_LABELS: Record<WorkoutField, string> = {
+  day: 'Day',
+  exercise: 'Exercise',
+  sets: 'Sets',
+  reps: 'Reps',
+  notes: 'Notes',
+};
 
 export const SOURCE_FIELD_LABELS: Record<SourceField, string> = {
   foodId: 'Food ID',

@@ -110,4 +110,32 @@ describe('shared approval list', () => {
     );
     expect(account.status).toBe('pending');
   });
+
+  it('rejects privileged updates from a non-admin Google account', async () => {
+    const store = memoryStore();
+    await call(store, '/v1/session', 'friend', 'POST');
+
+    const response = await call(store, '/v1/accounts/status', 'friend', 'POST', {
+      email: 'friend@example.com',
+      status: 'approved',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'You can’t manage people.' });
+    expect((await store.get('friend@example.com'))?.status).toBe('pending');
+  });
+
+  it('prevents the admin account from being revoked', async () => {
+    const store = memoryStore();
+    await call(store, '/v1/session', 'admin', 'POST');
+
+    const response = await call(store, '/v1/accounts/status', 'admin', 'POST', {
+      email: ADMIN_EMAIL,
+      status: 'denied',
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: 'The admin account stays allowed.' });
+    expect((await store.get(ADMIN_EMAIL))?.status).toBe('approved');
+  });
 });

@@ -185,12 +185,14 @@ export async function updateDestinationMapping(config: DestinationWorkbookConfig
   await saveDestinationConfig(config);
 }
 
-function missingWorkbookMessage(kind: 'source' | 'destination'): string {
+function missingWorkbookMessage(kind: 'source' | 'destination' | 'workout'): string {
   switch (kind) {
     case 'source':
       return 'Add your food list first.';
     case 'destination':
       return 'Add a meal log file first.';
+    case 'workout':
+      return 'Add a workout plan first.';
     default: {
       const exhaustive: never = kind;
       return exhaustive;
@@ -199,7 +201,7 @@ function missingWorkbookMessage(kind: 'source' | 'destination'): string {
 }
 
 export async function previewWorkbookSheet(
-  kind: 'source' | 'destination',
+  kind: 'source' | 'destination' | 'workout',
   sheetName: string,
   headerRowIndex: number,
 ) {

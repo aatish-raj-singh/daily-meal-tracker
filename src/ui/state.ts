@@ -1,12 +1,13 @@
-import type { FoodEntry, SourceFood, SyncStatus } from '../types';
+import type { FoodEntry, MealCategory, SourceFood, SyncStatus } from '../types';
 
-export type TabId = 'dashboard' | 'log' | 'history' | 'excel' | 'settings' | 'admin';
+export type TabId = 'dashboard' | 'log' | 'history' | 'excel' | 'settings' | 'admin' | 'breakdown';
 
 export interface UiState {
   tab: TabId;
   banner: { type: 'info' | 'success' | 'warning' | 'error'; text: string } | null;
   selectedFood: SourceFood | null;
   editingEntry: FoodEntry | null;
+  logMeal: MealCategory | null;
   offline: boolean;
 }
 
@@ -15,6 +16,7 @@ export const uiState: UiState = {
   banner: null,
   selectedFood: null,
   editingEntry: null,
+  logMeal: null,
   offline: typeof navigator !== 'undefined' ? !navigator.onLine : false,
 };
 

@@ -60,6 +60,32 @@ export function buildNutritionSample(): ArrayBuffer {
   ]);
 }
 
+export function buildWorkoutSample(): ArrayBuffer {
+  const headers = ['Day', 'Exercise', 'Sets', 'Reps', 'Notes'];
+  const rows = [
+    headers,
+    ['Monday', 'Bench Press', 4, 8, ''],
+    ['Monday', 'Overhead Press', 3, 8, ''],
+    ['Monday', 'Lateral Raise', 3, 12, ''],
+    ['Tuesday', 'Pull Up', 4, 6, ''],
+    ['Tuesday', 'Barbell Row', 4, 8, ''],
+    ['Tuesday', 'Barbell Curl', 3, 10, ''],
+    ['Wednesday', 'Squat', 4, 6, ''],
+    ['Wednesday', 'Romanian Deadlift', 3, 8, ''],
+    ['Wednesday', 'Calf Raise', 3, 15, ''],
+    ['Thursday', 'Incline Bench Press', 4, 8, ''],
+    ['Thursday', 'Dumbbell Shoulder Press', 3, 10, ''],
+    ['Thursday', 'Tricep Pushdown', 3, 12, ''],
+    ['Friday', 'Lat Pulldown', 4, 10, ''],
+    ['Friday', 'Seated Cable Row', 3, 10, ''],
+    ['Friday', 'Hammer Curl', 3, 10, ''],
+    ['Saturday', 'Front Squat', 4, 8, ''],
+    ['Saturday', 'Walking Lunge', 3, 10, ''],
+    ['Saturday', 'Leg Curl', 3, 12, ''],
+  ];
+  return workbookBytes('Plan', rows);
+}
+
 export function buildMealLogSample(): ArrayBuffer {
   return workbookBytes('Meals', [MEAL_LOG_HEADERS]);
 }

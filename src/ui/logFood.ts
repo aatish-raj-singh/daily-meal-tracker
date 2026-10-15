@@ -40,7 +40,7 @@ function breakdownTable(nutrients: NutrientValues): string {
       value === null || value === undefined
         ? '—'
         : `${formatNumber(value, row.decimals)}${row.unit ? ` ${row.unit}` : ''}`;
-    return `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${escapeHtml(amount)}</td></tr>`;
+    return `<tr class="nutrient-${row.key}"><th scope="row">${escapeHtml(row.label)}</th><td>${escapeHtml(amount)}</td></tr>`;
   }).join('');
   return `
     <div class="table-wrap">
@@ -67,7 +67,9 @@ export async function renderLogFood(
   const typedWeight = (root.querySelector('#log-qty') as HTMLInputElement | null)?.value;
   const initialQty = typedWeight !== undefined ? typedWeight : (editing?.quantity ?? '');
   const initialUnit = editing?.unit ?? (unitOptions.includes('g') ? 'g' : (unitOptions[0] ?? 'g'));
-  const initialMeal = editing?.meal ?? 'breakfast';
+  const queuedMeal = uiState.logMeal;
+  uiState.logMeal = null;
+  const initialMeal = editing?.meal ?? queuedMeal ?? 'breakfast';
   const initialDate = editing?.date ?? settings.selectedDate;
   const initialNotes = editing?.notes ?? '';
 

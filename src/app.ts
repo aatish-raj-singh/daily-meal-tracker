@@ -3,6 +3,7 @@ import { getPendingWrites } from './db/database';
 import { APP_VERSION, type Account } from './types';
 import { renderAdmin } from './ui/admin';
 import { renderAuthGate } from './ui/authScreen';
+import { renderBreakdown } from './ui/breakdown';
 import { renderDashboard } from './ui/dashboard';
 import { renderExcelSetup } from './ui/excelSetup';
 import { renderHistory } from './ui/history';
@@ -73,15 +74,16 @@ function buildShell(host: HTMLElement, account: Account): void {
   const tabs = tabsFor(account);
   host.innerHTML = `
     <header class="app-header">
-      <div>
+      <div class="brand">
         <h1>Daily Meal Tracker</h1>
-        <div class="muted" style="font-size:0.78rem">${escapeHtml(account.email)}</div>
+        <p class="user-email">${escapeHtml(account.email)}</p>
       </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+      <div class="header-actions">
         <span class="version-pill" title="Deployed app version">v${APP_VERSION}</span>
         <span id="net-status" class="status-pill">Online</span>
         <span id="sync-status" class="status-pill">Sync —</span>
-        <button type="button" class="ghost" id="logout-btn" style="padding:6px 10px">Log out</button>
+        <button type="button" class="ghost" id="open-settings">Settings</button>
+        <button type="button" class="ghost" id="logout-btn">Log out</button>
       </div>
     </header>
     <div id="banner-host"></div>
@@ -110,6 +112,12 @@ function buildShell(host: HTMLElement, account: Account): void {
     });
   });
 
+  host.querySelector('#open-settings')?.addEventListener('click', () => {
+    uiState.tab = 'settings';
+    clearBanner();
+    void renderView(host);
+  });
+
   host.querySelector('#logout-btn')?.addEventListener('click', async () => {
     if (!window.confirm('Log out?')) return;
     await logout();
@@ -127,6 +135,7 @@ function isTabId(value: string): value is TabId {
     case 'excel':
     case 'settings':
     case 'admin':
+    case 'breakdown':
       return true;
     default:
       return false;
@@ -145,8 +154,9 @@ async function renderView(host: HTMLElement): Promise<void> {
     uiState.tab = 'dashboard';
   }
 
+  const highlighted = uiState.tab === 'breakdown' ? 'dashboard' : uiState.tab;
   host.querySelectorAll('.tab-bar button').forEach((btn) => {
-    btn.classList.toggle('active', btn.getAttribute('data-tab') === uiState.tab);
+    btn.classList.toggle('active', btn.getAttribute('data-tab') === highlighted);
   });
 
   const bannerHost = host.querySelector('#banner-host') as HTMLElement | null;
@@ -174,9 +184,14 @@ async function renderView(host: HTMLElement): Promise<void> {
     }
   }
 
+  window.scrollTo(0, 0);
+
   switch (uiState.tab) {
     case 'dashboard':
       await renderDashboard(view);
+      break;
+    case 'breakdown':
+      await renderBreakdown(view);
       break;
     case 'log':
       await renderLogFood(view);

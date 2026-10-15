@@ -1,12 +1,15 @@
 import {
   getDestinationConfig,
   getSourceConfig,
+  getWorkoutConfig,
   saveDestinationConfig,
   saveSourceConfig,
+  saveWorkoutConfig,
 } from '../db/database';
 import {
   requiredDestinationFieldsMapped,
   requiredSourceFieldsMapped,
+  requiredWorkoutFieldsMapped,
 } from '../excel/mapping';
 import {
   addNutritionFood,
@@ -16,20 +19,24 @@ import {
   updateDestinationMapping,
   updateSourceMapping,
 } from '../services/foodLog';
+import { importWorkoutWorkbook, updateWorkoutMapping, workoutPlanIsActive } from '../services/workout';
 import {
   DESTINATION_FIELD_LABELS,
   SOURCE_FIELD_LABELS,
+  WORKOUT_FIELD_LABELS,
   type DestinationField,
   type SourceField,
+  type WorkoutField,
 } from '../types';
-import { chooseWorkbook, forgetFileHandle, saveSampleWorkbook, type PickerOutcome } from '../excel/fileAccess';
-import { buildMealLogSample, buildNutritionSample } from '../excel/samples';
+import { chooseWorkbook, forgetFileHandle, saveSampleWorkbook, type PickerOutcome, type WorkbookKind } from '../excel/fileAccess';
+import { buildMealLogSample, buildNutritionSample, buildWorkoutSample } from '../excel/samples';
 import { escapeHtml } from '../util/hash';
 import { setBanner } from './state';
 
 export async function renderExcelSetup(root: HTMLElement): Promise<void> {
   const source = await getSourceConfig();
   const dest = await getDestinationConfig();
+  const workout = await getWorkoutConfig();
 
   root.innerHTML = `
     <div class="card">
@@ -50,6 +57,16 @@ export async function renderExcelSetup(root: HTMLElement): Promise<void> {
       </div>
       <input id="dest-file" class="sr-only" type="file" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
       ${mealLogMarkup(dest)}
+    </div>
+
+    <div class="card">
+      <h2>Workout plan</h2>
+      <div class="btn-row">
+        <button type="button" class="secondary" id="workout-sample">Download sample</button>
+        <button type="button" class="primary" id="workout-pick">Choose file</button>
+      </div>
+      <input id="workout-file" class="sr-only" type="file" accept=".xlsx,.xlsm,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+      ${workoutMarkup(workout)}
     </div>
   `;
 
@@ -107,6 +124,37 @@ export async function renderExcelSetup(root: HTMLElement): Promise<void> {
     try {
       await forgetFileHandle('destination');
       const result = await importDestinationWorkbook(file);
+      setBanner('success', `Added ${result.config.identity.fileName}`);
+      window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
+    } catch (err) {
+      setBanner('error', err instanceof Error ? err.message : String(err));
+      window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
+    }
+  });
+
+  root.querySelector('#workout-sample')?.addEventListener('click', async () => {
+    try {
+      await useWorkbookChoice(
+        'workout',
+        await saveSampleWorkbook('workout', 'workout-plan.xlsx', buildWorkoutSample()),
+      );
+    } catch (err) {
+      setBanner('error', err instanceof Error ? err.message : String(err));
+    }
+  });
+  root.querySelector('#workout-pick')?.addEventListener('click', async () => {
+    try {
+      await useWorkbookChoice('workout', await chooseWorkbook('workout'));
+    } catch (err) {
+      setBanner('error', err instanceof Error ? err.message : String(err));
+    }
+  });
+  root.querySelector('#workout-file')?.addEventListener('change', async (ev) => {
+    const file = (ev.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      await forgetFileHandle('workout');
+      const result = await importWorkoutWorkbook(file);
       setBanner('success', `Added ${result.config.identity.fileName}`);
       window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
     } catch (err) {
@@ -207,6 +255,37 @@ export async function renderExcelSetup(root: HTMLElement): Promise<void> {
       window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
     });
   }
+
+  if (workout && !workoutPlanIsActive(workout)) {
+    await populateSheetControls(root, 'workout', workout.worksheetName, workout.headerRowIndex);
+    root.querySelector('#save-workout-map')?.addEventListener('click', async () => {
+      const cfg = await getWorkoutConfig();
+      if (!cfg) return;
+      const mapping = readMapping<WorkoutField>(
+        root,
+        'workout',
+        Object.keys(WORKOUT_FIELD_LABELS) as WorkoutField[],
+      );
+      cfg.mapping = mapping;
+      cfg.worksheetName = (root.querySelector('#workout-sheet') as HTMLSelectElement).value;
+      cfg.headerRowIndex = Number((root.querySelector('#workout-header') as HTMLInputElement).value);
+      const missing = requiredWorkoutFieldsMapped(cfg.mapping);
+      if (missing.length) {
+        setBanner(
+          'error',
+          `Match these columns: ${missing.map((field) => WORKOUT_FIELD_LABELS[field as WorkoutField] ?? field).join(', ')}`,
+        );
+        window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
+        return;
+      }
+      const preview = await previewWorkbookSheet('workout', cfg.worksheetName, cfg.headerRowIndex);
+      cfg.previewHeaders = preview.preview.headers;
+      cfg.mappingSaved = true;
+      await updateWorkoutMapping(cfg);
+      setBanner('success', 'Workout plan saved.');
+      window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
+    });
+  }
 }
 
 function nutritionIsActive(source: Awaited<ReturnType<typeof getSourceConfig>>): boolean {
@@ -262,6 +341,28 @@ function nutritionMarkup(source: Awaited<ReturnType<typeof getSourceConfig>>): s
     </div>`;
 }
 
+function workoutMarkup(workout: Awaited<ReturnType<typeof getWorkoutConfig>>): string {
+  if (!workout) return '';
+  if (workoutPlanIsActive(workout)) {
+    return `<div><strong>${escapeHtml(workout.identity.fileName)}</strong></div>
+      <div class="muted">Active workout plan</div>`;
+  }
+  return `<div><strong>${escapeHtml(workout.identity.fileName)}</strong></div>
+    <div class="field" style="margin-top:10px">
+      <label for="workout-sheet">Sheet</label>
+      <select id="workout-sheet"></select>
+    </div>
+    <div class="field">
+      <label for="workout-header">Header row</label>
+      <input id="workout-header" type="number" min="0" step="1" value="${workout.headerRowIndex}" />
+    </div>
+    <div id="workout-preview"></div>
+    <div id="workout-mapping"></div>
+    <div class="btn-row">
+      <button class="primary" id="save-workout-map">Save</button>
+    </div>`;
+}
+
 function mealLogIsActive(dest: Awaited<ReturnType<typeof getDestinationConfig>>): boolean {
   if (!dest) return false;
   if (dest.mappingSaved === true) return true;
@@ -291,10 +392,7 @@ function mealLogMarkup(dest: Awaited<ReturnType<typeof getDestinationConfig>>): 
     </div>`;
 }
 
-async function useWorkbookChoice(
-  kind: 'source' | 'destination',
-  outcome: PickerOutcome,
-): Promise<void> {
+async function useWorkbookChoice(kind: WorkbookKind, outcome: PickerOutcome): Promise<void> {
   switch (outcome.status) {
     case 'cancelled':
       return;
@@ -302,19 +400,15 @@ async function useWorkbookChoice(
       setBanner('success', 'Sample downloaded.');
       return;
     case 'unsupported': {
-      const inputId = kind === 'source' ? '#source-file' : '#dest-file';
-      const input = document.querySelector(inputId);
+      const input = document.querySelector(fileInputId(kind));
       if (input instanceof HTMLInputElement) input.click();
       return;
     }
     case 'file': {
       if (!outcome.file) return;
       try {
-        const result =
-          kind === 'source'
-            ? await importSourceWorkbook(outcome.file)
-            : await importDestinationWorkbook(outcome.file);
-        setBanner('success', `Added ${result.config.identity.fileName}`);
+        const fileName = await importChosenWorkbook(kind, outcome.file);
+        setBanner('success', `Added ${fileName}`);
       } catch (err) {
         setBanner('error', err instanceof Error ? err.message : String(err));
       }
@@ -328,13 +422,43 @@ async function useWorkbookChoice(
   }
 }
 
+function fileInputId(kind: WorkbookKind): string {
+  switch (kind) {
+    case 'source':
+      return '#source-file';
+    case 'destination':
+      return '#dest-file';
+    case 'workout':
+      return '#workout-file';
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
+async function importChosenWorkbook(kind: WorkbookKind, file: File): Promise<string> {
+  switch (kind) {
+    case 'source':
+      return (await importSourceWorkbook(file)).config.identity.fileName;
+    case 'destination':
+      return (await importDestinationWorkbook(file)).config.identity.fileName;
+    case 'workout':
+      return (await importWorkoutWorkbook(file)).config.identity.fileName;
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
+}
+
 async function populateSheetControls(
   root: HTMLElement,
-  kind: 'source' | 'dest',
+  kind: 'source' | 'dest' | 'workout',
   selectedSheet: string,
   headerRowIndex: number,
 ): Promise<void> {
-  const blobKind = kind === 'source' ? 'source' : 'destination';
+  const blobKind = kind === 'source' ? 'source' : kind === 'workout' ? 'workout' : 'destination';
   const data = await previewWorkbookSheet(blobKind, selectedSheet, headerRowIndex);
   const sheetSelect = root.querySelector(`#${kind}-sheet`) as HTMLSelectElement | null;
   if (!sheetSelect) return;
@@ -365,40 +489,48 @@ async function populateSheetControls(
         </table>
       </div>    `;
 
-    const cfg = kind === 'source' ? await getSourceConfig() : await getDestinationConfig();
     const mappingEl = root.querySelector(`#${kind}-mapping`)!;
-    if (kind === 'source' && cfg && 'mapping' in cfg) {
-      mappingEl.innerHTML = renderMappingControls(
-        'source',
-        SOURCE_FIELD_LABELS,
-        (cfg as Awaited<ReturnType<typeof getSourceConfig>>)!.mapping,
-        preview.preview.headers,
-      );
-    } else if (kind === 'dest' && cfg) {
-      mappingEl.innerHTML = renderMappingControls(
-        'dest',
-        DESTINATION_FIELD_LABELS,
-        cfg.mapping,
-        preview.preview.headers,
-      );
-    }
-
-    // Persist sheet/header choice lightly so preview stays in sync
     if (kind === 'source') {
       const sourceCfg = await getSourceConfig();
       if (sourceCfg) {
+        mappingEl.innerHTML = renderMappingControls(
+          'source',
+          SOURCE_FIELD_LABELS,
+          sourceCfg.mapping,
+          preview.preview.headers,
+        );
         sourceCfg.worksheetName = sheet;
         sourceCfg.headerRowIndex = header;
         sourceCfg.previewHeaders = preview.preview.headers;
         await saveSourceConfig(sourceCfg);
       }
-    } else {
+    } else if (kind === 'dest') {
       const destCfg = await getDestinationConfig();
       if (destCfg) {
+        mappingEl.innerHTML = renderMappingControls(
+          'dest',
+          DESTINATION_FIELD_LABELS,
+          destCfg.mapping,
+          preview.preview.headers,
+        );
         destCfg.worksheetName = sheet;
         destCfg.headerRowIndex = header;
         destCfg.previewHeaders = preview.preview.headers;
         await saveDestinationConfig(destCfg);
+      }
+    } else {
+      const workoutCfg = await getWorkoutConfig();
+      if (workoutCfg) {
+        mappingEl.innerHTML = renderMappingControls(
+          'workout',
+          WORKOUT_FIELD_LABELS,
+          workoutCfg.mapping,
+          preview.preview.headers,
+        );
+        workoutCfg.worksheetName = sheet;
+        workoutCfg.headerRowIndex = header;
+        workoutCfg.previewHeaders = preview.preview.headers;
+        await saveWorkoutConfig(workoutCfg);
       }
     }
   };

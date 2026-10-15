@@ -9,6 +9,7 @@ import {
   type PendingWrite,
   type RecoveryMeta,
   type SourceWorkbookConfig,
+  type WorkoutWorkbookConfig,
   type StoredBlob,
   type Account,
   type AuthSession,
@@ -28,6 +29,10 @@ interface MealTrackerDB extends DBSchema {
   destinationConfig: {
     key: 'primary';
     value: DestinationWorkbookConfig;
+  };
+  workoutConfig: {
+    key: 'primary';
+    value: WorkoutWorkbookConfig;
   };
   entries: {
     key: string;
@@ -60,8 +65,8 @@ interface MealTrackerDB extends DBSchema {
     value: GoogleCertCache;
   };
   fileHandles: {
-    key: 'source' | 'destination';
-    value: { id: 'source' | 'destination'; handle: FileSystemFileHandle };
+    key: 'source' | 'destination' | 'workout';
+    value: { id: 'source' | 'destination' | 'workout'; handle: FileSystemFileHandle };
   };
 }
 
@@ -79,6 +84,9 @@ export function getDb(): Promise<IDBPDatabase<MealTrackerDB>> {
         }
         if (!db.objectStoreNames.contains('destinationConfig')) {
           db.createObjectStore('destinationConfig');
+        }
+        if (!db.objectStoreNames.contains('workoutConfig')) {
+          db.createObjectStore('workoutConfig');
         }
         if (!db.objectStoreNames.contains('entries')) {
           const entries = db.createObjectStore('entries', { keyPath: 'entryId' });
@@ -147,6 +155,16 @@ export async function saveSourceConfig(config: SourceWorkbookConfig): Promise<vo
 export async function getDestinationConfig(): Promise<DestinationWorkbookConfig | null> {
   const db = await getDb();
   return (await db.get('destinationConfig', 'primary')) ?? null;
+}
+
+export async function getWorkoutConfig(): Promise<WorkoutWorkbookConfig | null> {
+  const db = await getDb();
+  return (await db.get('workoutConfig', 'primary')) ?? null;
+}
+
+export async function saveWorkoutConfig(config: WorkoutWorkbookConfig): Promise<void> {
+  const db = await getDb();
+  await db.put('workoutConfig', config, 'primary');
 }
 
 export async function saveDestinationConfig(config: DestinationWorkbookConfig): Promise<void> {
@@ -308,6 +326,7 @@ export async function clearAllData(): Promise<void> {
       'settings',
       'sourceConfig',
       'destinationConfig',
+      'workoutConfig',
       'entries',
       'pendingWrites',
       'blobs',
@@ -323,6 +342,7 @@ export async function clearAllData(): Promise<void> {
     tx.objectStore('settings').clear(),
     tx.objectStore('sourceConfig').clear(),
     tx.objectStore('destinationConfig').clear(),
+    tx.objectStore('workoutConfig').clear(),
     tx.objectStore('entries').clear(),
     tx.objectStore('pendingWrites').clear(),
     tx.objectStore('blobs').clear(),

@@ -6,10 +6,12 @@ import {
   getRecovery,
   getSettings,
   getSourceConfig,
+  getWorkoutConfig,
   saveDestinationConfig,
   saveRecovery,
   saveSettings,
   saveSourceConfig,
+  saveWorkoutConfig,
   upsertEntry,
   putAccount,
   putPending,
@@ -26,6 +28,7 @@ export async function createJsonBackup(): Promise<JsonBackupPayload> {
     settings: await getSettings(),
     sourceConfig: await getSourceConfig(),
     destinationConfig: await getDestinationConfig(),
+    workoutConfig: await getWorkoutConfig(),
     entries: await getAllEntries(true),
     pendingWrites: await getPendingWrites(),
     recovery: await getRecovery(),
@@ -78,6 +81,7 @@ export async function restoreJsonBackup(
   await saveSettings(payload.settings);
   if (payload.sourceConfig) await saveSourceConfig(payload.sourceConfig);
   if (payload.destinationConfig) await saveDestinationConfig(payload.destinationConfig);
+  if (payload.workoutConfig) await saveWorkoutConfig(payload.workoutConfig);
   if (payload.recovery) await saveRecovery(payload.recovery);
 
   for (const entry of payload.entries) {
