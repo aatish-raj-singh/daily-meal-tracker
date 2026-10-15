@@ -119,12 +119,10 @@ function buildIcons(): void {
   writeSolidPng(path.join(iconsDir, 'icon-512.png'), 512, 15, 118, 110);
 
   const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#0f766e"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#99f6e4" stroke-width="36"/>
-  <path d="M180 280c30 50 122 50 152 0" fill="none" stroke="#ecfdf5" stroke-width="28" stroke-linecap="round"/>
-  <circle cx="210" cy="220" r="18" fill="#ecfdf5"/>
-  <circle cx="302" cy="220" r="18" fill="#ecfdf5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#07111A"/>
+  <path fill="#34D399" d="M32 6C22 18 12 30 12 40c0 10 8 16 20 18 12-2 20-8 20-18C52 30 42 18 32 6z"/>
+  <path fill="none" stroke="#07111A" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" d="M25 26v7M32 18v12M39 26v7M25 33h14M32 33v16"/>
 </svg>`;
   fs.writeFileSync(path.join(iconsDir, 'icon.svg'), svg);
   fs.writeFileSync(path.join(root, 'public', 'favicon.svg'), svg);
