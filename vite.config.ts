@@ -7,7 +7,7 @@ export default defineConfig({
   base: pagesBase,
   plugins: [
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.png', 'icons/*.svg', 'PRIVACY.md'],
       manifest: {
         name: 'Daily Meal Tracker',
@@ -44,7 +44,7 @@ export default defineConfig({
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         clientsClaim: true,
-        skipWaiting: false,
+        skipWaiting: true,
       },
       devOptions: {
         enabled: true,

@@ -1,27 +1,21 @@
 import {
   clearAuthSession,
   getAccount,
-  getAllAccounts,
   getAuthSession,
   putAccount,
   saveAuthSession,
 } from '../db/database';
-import { ADMIN_EMAIL, type Account, type AccountStatus, type UserRole } from '../types';
+import { ADMIN_EMAIL, type Account } from '../types';
 import { nowIso } from '../util/hash';
+import { roleForEmail } from './accessPolicy';
+import { listDirectoryAccounts, setDirectoryStatus, syncSession } from './directory';
 import { GOOGLE_CLIENT_ID } from './googleClient';
 import { verifyGoogleIdToken } from './googleToken';
 import { normalizeEmail } from './password';
 
+export { roleForEmail, statusForSignIn } from './accessPolicy';
+
 let verifiedCache: { token: string; account: Account } | null = null;
-
-export function roleForEmail(email: string): UserRole {
-  return normalizeEmail(email) === ADMIN_EMAIL ? 'admin' : 'member';
-}
-
-export function statusForSignIn(email: string, existing: AccountStatus | undefined): AccountStatus {
-  if (roleForEmail(email) === 'admin') return 'approved';
-  return existing ?? 'pending';
-}
 
 export async function getSessionAccount(): Promise<Account | null> {
   const session = await getAuthSession();
@@ -35,20 +29,14 @@ export async function getSessionAccount(): Promise<Account | null> {
     verifiedCache = null;
     return null;
   }
-  if (verifiedCache?.token === session.idToken) {
-    const stored = await getAccount(verifiedCache.account.email);
-    if (!stored) return verifiedCache.account;
-    const account = { ...stored, role: roleForEmail(stored.email) };
-    verifiedCache = { token: session.idToken, account };
-    return account;
-  }
+  if (verifiedCache?.token === session.idToken) return verifiedCache.account;
 
   try {
     const identity = await verifyGoogleIdToken(session.idToken, GOOGLE_CLIENT_ID);
     if (identity.email !== normalizeEmail(session.email)) {
       throw new Error('Signed-in email does not match the Google token.');
     }
-    const account = await upsertFromGoogle(identity.email, identity.name);
+    const account = await syncStoredAccount(session.idToken, identity.email, identity.name);
     verifiedCache = { token: session.idToken, account };
     return account;
   } catch {
@@ -60,7 +48,7 @@ export async function getSessionAccount(): Promise<Account | null> {
 
 export async function signInWithGoogleIdToken(idToken: string): Promise<Account> {
   const identity = await verifyGoogleIdToken(idToken, GOOGLE_CLIENT_ID);
-  const account = await upsertFromGoogle(identity.email, identity.name);
+  const account = await syncStoredAccount(idToken, identity.email, identity.name);
   await saveAuthSession({
     id: 'current',
     email: account.email,
@@ -77,6 +65,11 @@ export async function logout(): Promise<void> {
   await clearAuthSession();
 }
 
+export async function refreshSessionAccount(): Promise<Account | null> {
+  verifiedCache = null;
+  return getSessionAccount();
+}
+
 export async function setAccountStatus(
   email: string,
   status: 'approved' | 'denied',
@@ -86,45 +79,36 @@ export async function setAccountStatus(
   if (roleForEmail(normalized) === 'admin') {
     throw new Error('The admin account stays allowed.');
   }
-  const existing = await getAccount(normalized);
-  if (!existing) throw new Error('That person has not signed in here.');
-  await putAccount({
-    ...existing,
-    role: 'member',
-    status,
-    updatedAt: nowIso(),
-  });
+  const session = await getAuthSession();
+  if (!session?.idToken) throw new Error('You can’t manage people.');
+  const updated = await setDirectoryStatus(session.idToken, normalized, status);
+  await putAccount(updated);
 }
 
 export async function listAccountsForAdmin(): Promise<Account[]> {
-  await requireAdmin();
-  const accounts = await getAllAccounts();
+  const session = await requireAdmin();
+  const accounts = await listDirectoryAccounts(session.idToken ?? '');
+  for (const account of accounts) await putAccount({ ...account, role: roleForEmail(account.email) });
   return accounts
     .map((account) => ({ ...account, role: roleForEmail(account.email) }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-async function upsertFromGoogle(email: string, displayName: string): Promise<Account> {
-  const normalized = normalizeEmail(email);
-  const existing = await getAccount(normalized);
-  const account: Account = {
-    email: normalized,
-    displayName: displayName.trim() || existing?.displayName || normalized,
-    role: roleForEmail(normalized),
-    status: statusForSignIn(normalized, existing?.status),
-    createdAt: existing?.createdAt ?? nowIso(),
-    updatedAt: nowIso(),
-  };
-  await putAccount(account);
-  return account;
+async function syncStoredAccount(idToken: string, email: string, name: string): Promise<Account> {
+  const existing = await getAccount(normalizeEmail(email));
+  const account = await syncSession(idToken, { email, name }, existing ?? null);
+  const stored = { ...account, role: roleForEmail(account.email) };
+  await putAccount(stored);
+  return stored;
 }
 
-async function requireAdmin(): Promise<Account> {
+async function requireAdmin(): Promise<Account & { idToken: string }> {
   const account = await getSessionAccount();
-  if (!account || account.role !== 'admin' || account.email !== ADMIN_EMAIL) {
+  const session = await getAuthSession();
+  if (!account || account.role !== 'admin' || account.email !== ADMIN_EMAIL || !session?.idToken) {
     throw new Error('You can’t manage people.');
   }
-  return account;
+  return { ...account, idToken: session.idToken };
 }
 
 export function canViewEntry(ownerEmail: string | undefined, account: Account | null): boolean {

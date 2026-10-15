@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 export const DB_NAME = 'daily-meal-tracker';
 export const DB_VERSION = 4;
 export const ADMIN_EMAIL = 'biasthakur.aatish@gmail.com';

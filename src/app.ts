@@ -1,4 +1,4 @@
-import { getSessionAccount, logout } from './auth/accounts';
+import { getSessionAccount, logout, refreshSessionAccount } from './auth/accounts';
 import { getPendingWrites } from './db/database';
 import { APP_VERSION, type Account } from './types';
 import { renderAdmin } from './ui/admin';
@@ -20,6 +20,7 @@ const BASE_TABS: Array<{ id: TabId; label: string; icon: string }> = [
 ];
 
 let listenersBound = false;
+let shownGate = '';
 
 export async function mountApp(host: HTMLElement): Promise<void> {
   if (!listenersBound) {
@@ -34,12 +35,21 @@ export async function mountApp(host: HTMLElement): Promise<void> {
       uiState.tab = ev.detail;
       if (host.dataset.mode === 'app') void renderView(host);
     }) as EventListener);
+    window.setInterval(() => {
+      void refreshSessionAccount().then((account) => {
+        const gate = account?.status ?? 'signed-out';
+        if (gate === shownGate) return;
+        shownGate = gate;
+        window.dispatchEvent(new CustomEvent('meal-tracker:auth-changed'));
+      });
+    }, 8000);
   }
   await renderRoot(host);
 }
 
 async function renderRoot(host: HTMLElement): Promise<void> {
   const account = await getSessionAccount();
+  shownGate = account?.status ?? 'signed-out';
   if (!account || account.status !== 'approved') {
     host.dataset.mode = 'auth';
     await renderAuthGate(host, account);

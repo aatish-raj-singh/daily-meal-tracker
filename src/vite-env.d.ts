@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_DIRECTORY_URL?: string;
+  readonly VITE_GOOGLE_CLIENT_ID?: string;
+}
+
 interface FilePickerAcceptType {
   description?: string;
   accept: Record<string, string | string[]>;

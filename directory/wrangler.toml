@@ -1,0 +1,8 @@
+name = "daily-meal-tracker-directory"
+main = "index.ts"
+compatibility_date = "2026-10-15"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "ACCOUNTS"
+id = "23ea24e641ad48369a18e14a7117c3fe"

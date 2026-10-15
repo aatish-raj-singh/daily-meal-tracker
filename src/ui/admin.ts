@@ -27,10 +27,34 @@ export function adminViewHtml(accounts: Account[]): string {
   `;
 }
 
-export async function renderAdmin(root: HTMLElement): Promise<void> {
-  const accounts = await listAccountsForAdmin();
-  root.innerHTML = adminViewHtml(accounts);
+let adminWatch = 0;
 
+export async function renderAdmin(root: HTMLElement): Promise<void> {
+  const watch = ++adminWatch;
+  window.clearInterval(adminWatchTimer);
+  await paintAdmin(root);
+  adminWatchTimer = window.setInterval(() => {
+    if (watch !== adminWatch || !root.isConnected) {
+      window.clearInterval(adminWatchTimer);
+      return;
+    }
+    void paintAdmin(root);
+  }, 8000);
+}
+
+let adminWatchTimer = 0;
+let adminMarkup = '';
+
+async function paintAdmin(root: HTMLElement): Promise<void> {
+  let markup = '';
+  try {
+    markup = adminViewHtml(await listAccountsForAdmin());
+  } catch (err) {
+    markup = `<div class="banner error">${escapeHtml(err instanceof Error ? err.message : 'Couldn’t load people.')}</div>`;
+  }
+  if (markup === adminMarkup && root.childElementCount > 0) return;
+  adminMarkup = markup;
+  root.innerHTML = markup;
   root.querySelectorAll<HTMLButtonElement>('[data-decision]').forEach((button) => {
     button.addEventListener('click', async () => {
       const email = button.getAttribute('data-email');
@@ -40,9 +64,11 @@ export async function renderAdmin(root: HTMLElement): Promise<void> {
       try {
         await setAccountStatus(email, decision);
         setBanner('success', decision === 'approved' ? 'Access allowed.' : 'Access revoked.');
+        adminMarkup = '';
         window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
       } catch (err) {
         setBanner('error', err instanceof Error ? err.message : String(err));
+        adminMarkup = '';
         window.dispatchEvent(new CustomEvent('meal-tracker:refresh'));
       }
     });
