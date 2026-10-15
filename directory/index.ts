@@ -6,27 +6,35 @@ import type { Account } from '../src/types';
 
 const GOOGLE_CERTS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
 
-interface KvListResult {
-  keys: Array<{ name: string }>;
-  list_complete: boolean;
-  cursor?: string;
+interface D1Prepared {
+  bind(...values: unknown[]): D1Prepared;
+  first<T>(): Promise<T | null>;
+  all<T>(): Promise<{ results?: T[] }>;
+  run(): Promise<unknown>;
 }
 
-interface KvNamespace {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string): Promise<void>;
-  list(options?: { cursor?: string }): Promise<KvListResult>;
+interface D1Database {
+  prepare(query: string): D1Prepared;
 }
 
 interface Env {
-  ACCOUNTS: KvNamespace;
+  DB: D1Database;
+}
+
+interface AccountRow {
+  email: string;
+  display_name: string;
+  role: Account['role'];
+  status: Account['status'];
+  created_at: string;
+  updated_at: string;
 }
 
 let cachedKeys: { at: number; keys: RsaJwk[] } | null = null;
 
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
-    return handleDirectoryRequest(request, kvStore(env.ACCOUNTS), verifyToken);
+    return handleDirectoryRequest(request, d1Store(env.DB), verifyToken);
   },
 };
 
@@ -56,25 +64,48 @@ async function googleKeys(force: boolean): Promise<RsaJwk[]> {
   return keys;
 }
 
-function kvStore(kv: KvNamespace): AccountStore {
+function d1Store(db: D1Database): AccountStore {
+  const select = `SELECT email, display_name, role, status, created_at, updated_at FROM accounts`;
   return {
     async get(email) {
-      const raw = await kv.get(email);
-      return raw ? (JSON.parse(raw) as Account) : null;
+      const row = await db.prepare(`${select} WHERE email = ?`).bind(email).first<AccountRow>();
+      return row ? toAccount(row) : null;
     },
     async put(account) {
-      await kv.put(account.email, JSON.stringify(account));
+      await db
+        .prepare(
+          `INSERT INTO accounts (email, display_name, role, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(email) DO UPDATE SET
+             display_name = excluded.display_name,
+             role = excluded.role,
+             status = excluded.status,
+             updated_at = excluded.updated_at`,
+        )
+        .bind(
+          account.email,
+          account.displayName,
+          account.role,
+          account.status,
+          account.createdAt,
+          account.updatedAt,
+        )
+        .run();
     },
     async list() {
-      const keys: string[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = await kv.list(cursor ? { cursor } : {});
-        keys.push(...page.keys.map((key) => key.name));
-        cursor = page.list_complete ? undefined : page.cursor;
-      } while (cursor);
-      const rows = await Promise.all(keys.map((key) => kv.get(key)));
-      return rows.filter((row): row is string => Boolean(row)).map((row) => JSON.parse(row) as Account);
+      const result = await db.prepare(select).all<AccountRow>();
+      return (result.results ?? []).map(toAccount);
     },
+  };
+}
+
+function toAccount(row: AccountRow): Account {
+  return {
+    email: row.email,
+    displayName: row.display_name,
+    role: row.role,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
