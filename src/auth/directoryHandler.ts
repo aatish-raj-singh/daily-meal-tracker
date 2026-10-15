@@ -53,9 +53,10 @@ export async function handleDirectoryRequest(
 
 async function saveSession(store: AccountStore, person: SignedInPerson): Promise<Account> {
   const existing = await store.get(normalizeEmail(person.email));
-  const account = nextAccount(person, existing, nowIso());
-  await store.put(account);
-  return account;
+  if (existing) return { ...existing, role: roleForEmail(existing.email) };
+  const created = nextAccount(person, null, nowIso());
+  await store.put(created);
+  return created;
 }
 
 async function saveStatus(store: AccountStore, actorEmail: string, request: Request): Promise<Account> {

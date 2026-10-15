@@ -65,6 +65,35 @@ describe('shared approval list', () => {
     expect((await again.json()).status).toBe('approved');
   });
 
+  it('does not let a later sign-in replace an approval with waiting', async () => {
+    const approved: Account = {
+      email: 'friend@example.com',
+      displayName: 'Friend',
+      role: 'member',
+      status: 'approved',
+      createdAt: 't',
+      updatedAt: 't',
+    };
+    const writes: Account[] = [];
+    const store: AccountStore = {
+      async get() {
+        return {
+          ...approved,
+          status: 'pending',
+        };
+      },
+      async put(account) {
+        writes.push(account);
+      },
+      async list() {
+        return [approved];
+      },
+    };
+    const response = await call(store, '/v1/session', 'friend', 'POST');
+    expect((await response.json()).status).toBe('pending');
+    expect(writes).toEqual([]);
+  });
+
   it('does not treat a locally approved member as allowed when the shared list is unreachable', () => {
     const account = accountWhenDirectoryUnavailable(
       { email: 'friend@example.com', name: 'Friend' },
