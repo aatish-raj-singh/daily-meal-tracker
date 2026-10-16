@@ -216,6 +216,28 @@ export async function upsertEntry(
   await tx.done;
 }
 
+/** Write a copied meal in one transaction so a failure keeps the previous records. */
+export async function putEntriesAtomic(
+  rows: Array<{ entry: FoodEntry; pending: PendingWrite }>,
+): Promise<void> {
+  if (rows.length === 0) return;
+  const db = await getDb();
+  const tx = db.transaction(['entries', 'pendingWrites'], 'readwrite');
+  const entries = tx.objectStore('entries');
+  const pendingStore = tx.objectStore('pendingWrites');
+  const byEntry = pendingStore.index('by-entry');
+  for (const row of rows) {
+    let cursor = await byEntry.openCursor(row.entry.entryId);
+    while (cursor) {
+      await cursor.delete();
+      cursor = await cursor.continue();
+    }
+    await entries.put(row.entry);
+    await pendingStore.put(row.pending);
+  }
+  await tx.done;
+}
+
 export async function getEntry(entryId: string): Promise<FoodEntry | undefined> {
   const db = await getDb();
   return db.get('entries', entryId);

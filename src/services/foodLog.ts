@@ -17,6 +17,7 @@ import {
   upsertEntry,
   getEntriesByDate,
   getAllEntries,
+  putEntriesAtomic,
 } from '../db/database';
 import {
   appendNutritionRow,
@@ -36,6 +37,7 @@ import type {
   DestinationWorkbookConfig,
   FoodEntry,
   MealCategory,
+  NutrientValues,
   PendingWrite,
   SourceFood,
   SourceWorkbookConfig,
@@ -304,6 +306,134 @@ export async function saveFoodEntry(input: SaveEntryInput): Promise<SaveEntryRes
       'Meal saved on this device. ' +
       (sync.error ?? 'The Excel meal log is not ready yet.'),
     totals,
+  };
+}
+
+export interface CopyEntryDraft {
+  entryId: string;
+  sourceEntryId: string | null;
+  date: string;
+  time: string;
+  meal: MealCategory;
+  sourceFoodId: string;
+  sourceFoodName: string;
+  quantity: number;
+  unit: string;
+  basisQuantity: number;
+  basisUnit: string;
+  nutrients: NutrientValues;
+  notes: string;
+  sourceWorkbookSha256: string;
+  sourceWorksheet: string;
+}
+
+export interface CopyMealResult {
+  count: number;
+  date: string;
+  meal: MealCategory;
+  workbookSynced: boolean;
+  message: string;
+}
+
+let copyBusy = false;
+let copyFlight: Promise<CopyMealResult> | null = null;
+
+export function saveCopiedEntries(drafts: CopyEntryDraft[]): Promise<CopyMealResult> {
+  if (copyBusy && copyFlight) return copyFlight;
+  copyBusy = true;
+  copyFlight = persistCopiedEntries(drafts).finally(() => {
+    copyBusy = false;
+    copyFlight = null;
+  });
+  return copyFlight;
+}
+
+async function persistCopiedEntries(drafts: CopyEntryDraft[]): Promise<CopyMealResult> {
+  if (drafts.length === 0) throw new Error('Add at least one food.');
+  const date = drafts[0]?.date ?? '';
+  const meal = drafts[0]?.meal;
+  if (!meal || drafts.some((draft) => draft.date !== date || draft.meal !== meal)) {
+    throw new Error('Copy one meal at a time.');
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Enter a valid date.');
+  const ids = new Set<string>();
+  for (const draft of drafts) {
+    if (!(draft.quantity > 0)) throw new Error(`Enter a weight for ${draft.sourceFoodName}.`);
+    if (!draft.entryId || ids.has(draft.entryId)) throw new Error('Couldn’t copy this meal. Try again.');
+    ids.add(draft.entryId);
+    if (draft.sourceEntryId && draft.entryId === draft.sourceEntryId) {
+      throw new Error('Couldn’t copy this meal. Try again.');
+    }
+    const existing = await getEntry(draft.entryId);
+    if (existing && existing.sourceFoodId !== draft.sourceFoodId) {
+      throw new Error('This copy was already saved.');
+    }
+  }
+
+  const account = await getSessionAccount();
+  const now = nowIso();
+  const rows: Array<{ entry: FoodEntry; pending: PendingWrite }> = [];
+  for (const draft of drafts) {
+    const existing = await getEntry(draft.entryId);
+    const entry: FoodEntry = {
+      entryId: draft.entryId,
+      date: draft.date,
+      time: draft.time || currentTimeLocal(),
+      meal: draft.meal,
+      sourceFoodId: draft.sourceFoodId,
+      sourceFoodName: draft.sourceFoodName,
+      quantity: draft.quantity,
+      unit: draft.unit,
+      basisQuantity: draft.basisQuantity,
+      basisUnit: draft.basisUnit,
+      nutrients: { ...draft.nutrients },
+      notes: draft.notes,
+      sourceWorkbookSha256: draft.sourceWorkbookSha256,
+      sourceWorksheet: draft.sourceWorksheet,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      syncStatus: 'pending',
+      syncError: null,
+      deletedAt: null,
+      ownerEmail: existing?.ownerEmail ?? account?.email,
+    };
+    rows.push({
+      entry,
+      pending: {
+        id: newId(),
+        entryId: entry.entryId,
+        operation: 'upsert',
+        createdAt: now,
+        lastAttemptAt: null,
+        attemptCount: 0,
+        lastError: null,
+      },
+    });
+  }
+
+  await putEntriesAtomic(rows);
+
+  let workbookSynced = true;
+  let syncError = '';
+  for (const row of rows) {
+    const sync = await trySyncEntry(row.entry, 'upsert');
+    if (!sync.synced) {
+      workbookSynced = false;
+      syncError = sync.error ?? '';
+    }
+  }
+
+  const count = rows.length;
+  const noun = count === 1 ? 'food' : 'foods';
+  const saved = `Copied ${count} ${noun}.`;
+  return {
+    count,
+    date,
+    meal,
+    workbookSynced,
+    message: workbookSynced
+      ? saved
+      : `${saved} Saved on this device. ${syncError || 'The Excel meal log is not ready yet.'}`,
   };
 }
 

@@ -1,4 +1,5 @@
 import { getSettings, saveSettings } from '../db/database';
+import { renderCopyMeal } from './copyMeal';
 import { calculateNutrients } from '../nutrition/calc';
 import { compatibleUnitsFor } from '../nutrition/units';
 import { getCachedSourceFoods, saveFoodEntry } from '../services/foodLog';
@@ -74,6 +75,7 @@ export async function renderLogFood(
   const initialNotes = editing?.notes ?? '';
 
   root.innerHTML = `
+    ${editing ? '' : '<div id="copy-meal-host"></div>'}
     <div class="card">
       <h2>${escapeHtml(options?.heading ?? (editing ? 'Edit food entry' : 'Log food'))}</h2>
       <div class="grid-2">
@@ -130,6 +132,11 @@ export async function renderLogFood(
       </div>
     </div>
   `;
+
+  if (!editing) {
+    const copyHost = root.querySelector('#copy-meal-host') as HTMLElement | null;
+    if (copyHost) await renderCopyMeal(copyHost);
+  }
 
   const searchInput = root.querySelector('#food-search') as HTMLInputElement;
   const results = root.querySelector('#food-results') as HTMLElement;

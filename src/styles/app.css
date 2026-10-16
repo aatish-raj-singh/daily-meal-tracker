@@ -383,6 +383,70 @@ main.login-screen {
   }
 }
 
+.copy-meal .copy-wide {
+  width: 100%;
+  margin-bottom: var(--space-2);
+}
+
+.copy-source-list {
+  margin: 0 0 var(--space-3);
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.copy-empty {
+  margin: 0 0 var(--space-3);
+  color: var(--muted);
+}
+
+.copy-line {
+  margin-bottom: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-entry);
+}
+
+.copy-line-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.copy-line-top strong {
+  overflow-wrap: anywhere;
+}
+
+.copy-line .field {
+  margin-bottom: 0;
+}
+
+.copy-remove {
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.copy-nuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: var(--space-2) 0 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.copy-totals {
+  margin: var(--space-3) 0;
+}
+
+.copy-review {
+  margin: 6px 0 0;
+  color: var(--warn);
+  font-size: 0.8rem;
+}
+
 .tab-bar {
   position: fixed;
   left: 0;
